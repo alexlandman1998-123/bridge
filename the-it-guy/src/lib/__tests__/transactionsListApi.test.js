@@ -37,6 +37,11 @@ class QueryBuilder {
     return this
   }
 
+  range(from, to) {
+    this.page = { from, to }
+    return this
+  }
+
   async maybeSingle() {
     const result = await this.client.execute(this)
     return { ...result, data: result.data?.[0] || null }
@@ -124,9 +129,11 @@ const client = {
     return new QueryBuilder(this, table)
   },
   execute(query) {
-    calls.push({ table: query.table, selection: query.selection, filters: query.filters })
+    calls.push({ table: query.table, selection: query.selection, filters: query.filters, page: query.page })
+    if (this.failPage != null && query.page?.from === this.failPage) return { data: null, error: { code: '42501', message: 'Access check failed' } }
+    const data = (datasets[query.table] || []).filter((row) => matches(this, query.table, row, query.filters))
     return {
-      data: (datasets[query.table] || []).filter((row) => matches(this, query.table, row, query.filters)),
+      data: query.page ? data.slice(query.page.from, query.page.to + 1) : data,
       error: null,
     }
   },
@@ -139,7 +146,7 @@ const server = await createServer({
 })
 
 try {
-  const { fetchTransactionsByParticipantSummary, invalidateTransactionsListCache } = await server.ssrLoadModule('/src/lib/transactionsListApi.js')
+  const { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, invalidateTransactionsListCache } = await server.ssrLoadModule('/src/lib/transactionsListApi.js')
   const options = {
     client,
     userId: 'user-a',
@@ -221,7 +228,38 @@ try {
   datasets.development_documents[0].file_url = expiredHero
   invalidateTransactionsListCache()
   assert.match((await fetchTransactionsByParticipantSummary(options))[0].development.cover_image_url, /token=fresh$/, 'legacy document cover URLs renew without storage metadata')
-  console.log('Transactions scoped summary tests passed')
+  // Principal summaries read every allowed page in the selected organisation,
+  // including completed history without restoring deliberately deleted deals.
+  const history = Array.from({ length: 1003 }, (_, index) => ({ id: `history-${index}`, organisation_id: 'org-a', assigned_agent: 'Other Agent', is_active: index !== 1, stage: index === 0 ? 'Registered' : 'OTP Signed' }))
+  transactions.push(...history)
+  invalidateTransactionsListCache()
+  const principalOptions = { client, organisationId: 'org-a', userId: 'principal-a', activeTransactionsOnly: true, includePropertyDetails: false, readAllPages: true }
+  const beforePrincipal = calls.length
+  const all = await fetchTransactionsListSummary(principalOptions)
+  assert.equal(all.length,1003)
+  assert.ok(all.some(row => row.transaction.id === 'history-0'))
+  assert.ok(!all.some(row => row.transaction.id === 'history-1'),'deleted transactions stay out of current client summaries')
+  assert.ok(!all.some(row => row.transaction.id === 'tx-b'))
+  const pages = calls.slice(beforePrincipal).filter(call => call.table === 'transactions')
+  assert.deepEqual(pages.map(call => call.page),[{ from:0,to:499 },{ from:500,to:999 },{ from:1000,to:1499 }])
+  assert.ok(pages.every(call => call.filters.some(filter => filter.column === 'organisation_id' && filter.value === 'org-a')))
+  assert.ok(!calls.slice(beforePrincipal).some(call => call.table === 'transaction_participants'))
+  const linkedOnly = await fetchTransactionsListSummary({ ...principalOptions, transactionIds: ['history-0'] })
+  assert.deepEqual(linkedOnly.map(row => row.transaction.id),['history-0'])
+  assert.deepEqual(await fetchTransactionsListSummary({ ...principalOptions, transactionIds: [] }),[])
+  const active = await fetchTransactionsListSummary({ ...principalOptions, activeTransactionsOnly: true })
+  assert.equal(active.length,1003)
+  assert.ok(active.some(row => row.transaction.id === 'history-0'))
+  assert.ok(!active.some(row => row.transaction.id === 'history-1'))
+  const beforeActorChange = calls.length
+  await fetchTransactionsListSummary({ ...principalOptions, userId: 'principal-b' })
+  assert.ok(calls.length > beforeActorChange,'organisation summary caches cannot cross signed-in actors')
+  invalidateTransactionsListCache()
+  client.failPage = 500
+  await assert.rejects(fetchTransactionsListSummary(principalOptions), error => error.code === '42501')
+  delete client.failPage
+  assert.equal((await fetchTransactionsListSummary(principalOptions)).length,1003,'a failed later page must not cache partial history')
+  console.log('Transactions scoped summary and principal history tests passed')
 } finally {
   await server.close()
 }

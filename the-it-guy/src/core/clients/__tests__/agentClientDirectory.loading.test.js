@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
-  crm: vi.fn(), transactions: vi.fn(), listings: vi.fn(), canvassing: vi.fn(),
+  crm: vi.fn(), transactions: vi.fn(), organisationTransactions: vi.fn(), listings: vi.fn(), canvassing: vi.fn(),
   identities: vi.fn(), activity: vi.fn(), settings: vi.fn(), users: vi.fn(),
   from: vi.fn(), guard: vi.fn(), overview: vi.fn(),
   auth: vi.fn(() => ({ data: { subscription: { unsubscribe() {} } } })),
@@ -10,26 +10,27 @@ const api = vi.hoisted(() => ({
 vi.mock('../../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: { from: api.from, auth: { onAuthStateChange: api.auth } } }))
 vi.mock('../../../lib/agencyCrmRepository', () => ({ listAgencyCrmLeadContacts: api.crm }))
 vi.mock('../../../domains/reporting/api', () => ({ fetchDashboardOverview: api.overview }))
-vi.mock('../../../lib/transactionsListApi', () => ({ fetchTransactionsByParticipantSummary: api.transactions }))
+vi.mock('../../../lib/transactionsListApi', () => ({ fetchTransactionsByParticipantSummary: api.transactions, fetchTransactionsListSummary: api.organisationTransactions }))
 vi.mock('../../../services/privateListingService', () => ({ getOrganisationPrivateListings: api.listings }))
 vi.mock('../../../lib/canvassingRepository', () => ({ listCanvassingWorkspace: api.canvassing }))
 vi.mock('../../../services/clientIdentityService', () => ({ loadClientIdentities: api.identities }))
 vi.mock('../../../services/clientActivityService', () => ({ loadLatestClientActivity: api.activity }))
 vi.mock('../../../lib/settingsApi', () => ({ fetchOrganisationSettings: api.settings, listOrganisationUsersForWorkspace: api.users }))
 vi.mock('../../../services/workspaceResolutionService', () => ({ assertResolvedWorkspaceContext: api.guard }))
-import { invalidateAgentClientDirectoryCache, loadAgentClientDirectory } from '../agentClientDirectory'
+import { getAgentClientProfile, invalidateAgentClientDirectoryCache, loadAgentClientDirectory } from '../agentClientDirectory'
 
 const organisationId = '11111111-1111-4111-8111-111111111111'
 const context = { profile: { id: 'agent-a', email: 'agent@example.test', fullName: 'Agent A' }, role: 'agent', workspace: { id: organisationId } }
 const crm = { contacts: [], leads: [], leadActivities: [], tasks: [] }
 const identity = (name = 'Client A') => ({ available: true, canManage: true, profiles: [{ id: 'client-a', organisation_id: organisationId, name, updated_at: '2026-10-01T12:00:00Z' }], links: [], identifiers: [] })
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done }); return { promise, resolve } }
-let queries
+let queries, sellerRows
 beforeEach(() => {
   invalidateAgentClientDirectoryCache()
-  for (const mock of [api.crm, api.transactions, api.listings, api.canvassing, api.identities, api.activity, api.settings, api.users, api.from, api.guard, api.overview]) mock.mockReset()
+  for (const mock of [api.crm, api.transactions, api.organisationTransactions, api.listings, api.canvassing, api.identities, api.activity, api.settings, api.users, api.from, api.guard, api.overview]) mock.mockReset()
   api.crm.mockResolvedValue(crm)
   api.transactions.mockResolvedValue([])
+  api.organisationTransactions.mockResolvedValue([])
   api.listings.mockResolvedValue([])
   api.canvassing.mockResolvedValue({ prospects: [], activities: [] })
   api.identities.mockResolvedValue(identity())
@@ -37,10 +38,12 @@ beforeEach(() => {
   api.settings.mockResolvedValue({ organisation: { id: organisationId } })
   api.users.mockResolvedValue([{ userId: 'agent-a', fullName: 'Agent A' }])
   queries = []
+  sellerRows = []
   api.from.mockImplementation((table) => {
     const query = { table, filters: [] }; queries.push(query)
-    const chain = { then: (resolve, reject) => Promise.resolve({ data: [], error: null }).then(resolve, reject) }
-    for (const method of ['select', 'order', 'limit', 'neq', 'in']) chain[method] = () => chain
+    const chain = { then: (resolve, reject) => Promise.resolve({ data: table === 'transactions' ? sellerRows.filter(row => query.ids?.includes(row.id)) : [], error: null }).then(resolve, reject) }
+    for (const method of ['select', 'order', 'limit', 'neq']) chain[method] = () => chain
+    chain.in = (column, values) => { if (column === 'id') query.ids = values; return chain }
     chain.eq = (column, value) => { query.filters.push([column, value]); return chain }
     return chain
   })
@@ -141,4 +144,39 @@ test('developer directory retains portfolio reads and scopes identities to the o
   expect(api.crm).toHaveBeenCalledWith(organisationId, { includeLocalFallback: false })
   expect(api.overview).toHaveBeenCalledWith({ developmentId: null, organisationId, includeSecondaryData: false })
   expect(api.transactions).not.toHaveBeenCalled()
+  expect(api.organisationTransactions).not.toHaveBeenCalled()
+})
+
+test.each([{ workspaceRole: 'principal' }, { workspace_role: 'owner' }, { role: 'principal' }])('principal clients include other agents’ linked and completed deals (%j)', async (membership) => {
+  const linked = id => ({ transaction: { id, organisation_id: organisationId, assigned_agent: 'Another Agent', stage: id === 'completed' ? 'Registered' : 'OTP Signed', is_active: true }, buyer: { id: `buyer-${id}`, name: 'Client A' } })
+  api.organisationTransactions.mockResolvedValue([linked('active'), linked('completed'), { transaction: { id: 'unrelated', organisation_id: organisationId }, buyer: { id: 'other-buyer', name: 'Other client' } }])
+  api.identities.mockResolvedValue({ ...identity(), links: ['active','completed'].map(source_id => ({ client_id: 'client-a', source_kind: 'transaction_buyer', source_id })) })
+  const directory = await loadAgentClientDirectory({ ...context, currentMembership: { id: 'membership', ...membership } })
+  const detail = getAgentClientProfile(directory.clients, 'client:client-a')
+  expect(detail.transactions.map(row => row.id).sort()).toEqual(['active','completed'])
+  expect(detail.transactions.find(row => row.id === 'completed').status).toBe('Completed')
+  expect(api.organisationTransactions).toHaveBeenCalledWith(expect.objectContaining({ organisationId, userId: 'agent-a', activeTransactionsOnly: true, includePropertyDetails: false, readAllPages: true }))
+  expect(api.transactions).not.toHaveBeenCalled()
+})
+
+test('changing principal membership back to agent never reuses the wider directory', async () => {
+  const membership = { id: 'membership', workspaceRole: 'principal' }
+  await loadAgentClientDirectory({ ...context, currentMembership: membership })
+  await loadAgentClientDirectory({ ...context, currentMembership: { ...membership, role: 'principal', workspaceRole: 'agent' } })
+  expect(api.organisationTransactions).toHaveBeenCalledTimes(1)
+  expect(api.transactions).toHaveBeenCalledTimes(1)
+  await loadAgentClientDirectory({ ...context, currentMembership: membership, forceRefresh: true })
+  expect(api.organisationTransactions).toHaveBeenLastCalledWith(expect.objectContaining({ forceRefresh: true }))
+})
+
+test('principal seller links stay complete beyond a thousand deals', async () => {
+  const ids = Array.from({ length: 1001 }, (_, index) => `deal-${index}`)
+  sellerRows = ids.map(id => ({ id, seller_name: 'Client A', seller_email: 'shared-representative@example.test' }))
+  api.organisationTransactions.mockResolvedValue(ids.map(id => ({ transaction: { id, organisation_id: organisationId, assigned_agent: 'Another Agent' } })))
+  api.identities.mockResolvedValue({ ...identity(), links: ids.map(source_id => ({ client_id: 'client-a', source_kind: 'transaction_seller', source_id })) })
+  const directory = await loadAgentClientDirectory({ ...context, currentMembership: { workspaceRole: 'principal' } })
+  expect(getAgentClientProfile(directory.clients, 'client:client-a').transactions).toHaveLength(1001)
+  const sellerQueries = queries.filter(query => query.table === 'transactions')
+  expect(sellerQueries).toHaveLength(6)
+  expect(sellerQueries.every(query => query.ids.length <= 200 && query.filters.some(([column,value]) => column === 'organisation_id' && value === organisationId))).toBe(true)
 })

@@ -4,15 +4,16 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import ClientTransactionsPanel, { LocalClientTransactionPreviewPage } from './ClientTransactionsPanel'
 import { getLocalClientPreview } from '../../core/clients/localClientPreview'
-import { fetchTransactionsByParticipantSummary } from '../../lib/transactionsListApi'
+import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../../lib/transactionsListApi'
 
-vi.mock('../../context/WorkspaceContext', () => ({ useWorkspace: () => ({ profile: { id: 'agent', email: 'agent@example.test' } }) }))
+const workspace = vi.hoisted(() => ({ current: null }))
+vi.mock('../../context/WorkspaceContext', () => ({ useWorkspace: () => workspace.current }))
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: null }))
-vi.mock('../../lib/transactionsListApi', () => ({ fetchTransactionsByParticipantSummary: vi.fn() }))
+vi.mock('../../lib/transactionsListApi', () => ({ fetchTransactionsByParticipantSummary: vi.fn(), fetchTransactionsListSummary: vi.fn() }))
 const fixture = getLocalClientPreview({ client: { id: 'preview-client', organisationId: '322c3853-2d82-4413-97e6-b4cd8bc32a7c', email: 'alexlandman1998@gmail.com', name: 'Alexander Landman' } }, { development: true, hostname: 'localhost', now: Date.parse('2026-10-10T08:00:00Z') })
 function CurrentRoute() { const location = useLocation(); return <output aria-label="Current route">{location.pathname}</output> }
 const show = props => render(<MemoryRouter initialEntries={['/clients/preview-client']}><ClientTransactionsPanel client={fixture.client} transactions={fixture.transactions} preview {...props} /><CurrentRoute /></MemoryRouter>)
-beforeEach(() => { fetchTransactionsByParticipantSummary.mockResolvedValue([]) })
+beforeEach(() => { workspace.current = { profile: { id: 'agent', email: 'agent@example.test' }, role: 'agent', currentMembership: { workspaceRole: 'agent' } }; fetchTransactionsByParticipantSummary.mockResolvedValue([]); fetchTransactionsListSummary.mockResolvedValue([]) })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 test('property cards open a details dialog without leaving the client, and Escape returns focus', async () => {
@@ -65,4 +66,16 @@ test('a failed property image keeps the card usable and empty profiles make no d
   show({ transactions: [], preview: false })
   expect(screen.getByText('No linked transactions yet')).toBeTruthy()
   expect(fetchTransactionsByParticipantSummary).not.toHaveBeenCalled()
+})
+
+test('principal cards load details for the linked client deals without a personal assignment filter', async () => {
+  workspace.current.currentMembership.workspaceRole = 'principal'
+  fetchTransactionsListSummary.mockResolvedValue([{ transaction: { id: 'other-agent-deal', property_address_line_1: '18 Willow Lane', property_image_url: '/principal-cover.jpg' } }, { transaction: { id: 'unrelated', property_address_line_1: 'Unrelated property' } }])
+  show({ preview: false, transactions: [{ id: 'other-agent-deal', reference: 'LINKED-1', propertyLabel: '18 Willow Lane', status: 'Active', typeLabel: 'Seller' }] })
+  await waitFor(() => expect(screen.getByRole('img').getAttribute('src')).toBe('/principal-cover.jpg'))
+  expect(fetchTransactionsListSummary).toHaveBeenCalledWith(expect.objectContaining({ organisationId: fixture.client.organisationId, userId: 'agent', transactionIds: ['other-agent-deal'], activeTransactionsOnly: true }))
+  expect(fetchTransactionsByParticipantSummary).not.toHaveBeenCalled()
+  expect(screen.queryByText('Unrelated property')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'View transaction details for 18 Willow Lane' }))
+  expect(within(screen.getByRole('dialog')).getByRole('link', { name: 'Open full transaction' }).getAttribute('href')).toBe('/transactions/other-agent-deal')
 })

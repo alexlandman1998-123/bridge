@@ -5,7 +5,8 @@ import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { getAgentClientProfile } from '../../core/clients/agentClientDirectory'
-import { fetchTransactionsByParticipantSummary } from '../../lib/transactionsListApi'
+import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../../lib/transactionsListApi'
+import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
 import { isSupabaseConfigured } from '../../lib/supabaseClient'
 
 const currency = value => Number.isFinite(Number(value)) && Number(value) > 0
@@ -55,20 +56,24 @@ function TransactionDetails({ transaction, client }) {
 }
 
 export default function ClientTransactionsPanel({ client, transactions = [], preview = false }) {
-  const { profile } = useWorkspace()
+  const { profile, role, currentMembership } = useWorkspace()
+  const principal = canAccessPrincipalExperience({ appRole: role, membershipRole: currentMembership?.workspaceRole || currentMembership?.workspace_role || currentMembership?.role })
   const location = useLocation()
   const [enrichmentResult, setEnrichmentResult] = useState(null)
   const [selectedKey, setSelectedKey] = useState(null)
-  const requestScope = useMemo(() => ({ client, transactions, preview, userId: profile?.id, email: profile?.email || '', fullName: profile?.fullName || '' }), [client, transactions, preview, profile?.id, profile?.email, profile?.fullName])
+  const requestScope = useMemo(() => ({ client, transactions, preview, principal, userId: profile?.id, email: profile?.email || '', fullName: profile?.fullName || '' }), [client, transactions, preview, principal, profile?.id, profile?.email, profile?.fullName])
   const enrichment = enrichmentResult?.scope === requestScope ? enrichmentResult.transactions : EMPTY_TRANSACTIONS
   const mediaError = enrichmentResult?.scope === requestScope && enrichmentResult.error
   useEffect(() => {
-    const { client, transactions, preview, userId, email, fullName } = requestScope
+    const { client, transactions, preview, principal, userId, email, fullName } = requestScope
     if (preview || !isSupabaseConfigured || !userId || !transactions.length) return undefined
     let current = true
     const ids = new Set(transactions.map(transaction => transaction.id).filter(Boolean))
     // Keep the directory's fast summary read; load property photos only in this tab.
-    void fetchTransactionsByParticipantSummary({ userId, roleType: 'agent', organisationId: client.organisationId, identityContext: { email, fullName } })
+    const request = principal
+      ? fetchTransactionsListSummary({ userId, organisationId: client.organisationId, transactionIds: [...ids], activeTransactionsOnly: true, readAllPages: true })
+      : fetchTransactionsByParticipantSummary({ userId, roleType: 'agent', organisationId: client.organisationId, identityContext: { email, fullName } })
+    void request
       .then(rows => {
         if (!current) return
         const matched = rows.filter(row => ids.has(row.transaction?.id))

@@ -6,7 +6,8 @@ import { listAgencyCrmLeadContacts } from '../../lib/agencyCrmRepository'
 import { listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { fetchTransactionsByParticipantSummary } from '../../lib/transactionsListApi'
+import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../../lib/transactionsListApi'
+import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
 import { getOrganisationPrivateListings } from '../../services/privateListingService'
 import { assertResolvedWorkspaceContext } from '../../services/workspaceResolutionService'
 import { AGENCY_CRM_UPDATED_EVENT } from '../../lib/agencyCrmUpdateBus'
@@ -759,15 +760,22 @@ function buildPrivateListingSellerSources(rows = []) {
     .filter(Boolean)
 }
 
-async function fetchTransactionSellerRows(transactionIds = []) {
+async function fetchTransactionSellerRows(transactionIds = [], organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !transactionIds.length) return []
   try {
-    const result = await supabase
-      .from('transactions')
-      .select('id, seller_name, seller_email, seller_phone, updated_at')
-      .in('id', transactionIds)
-    if (result.error) return []
-    return result.data || []
+    const rows = []
+    // Keep the seller handoff complete past the API row limit and keep ID
+    // filters small enough for the request URL on a principal's full portfolio.
+    for (let offset = 0; offset < transactionIds.length; offset += 200) {
+      let query = supabase.from('transactions')
+        .select('id, seller_name, seller_email, seller_phone, updated_at')
+        .in('id', transactionIds.slice(offset, offset + 200))
+      if (organisationId) query = query.eq('organisation_id', organisationId)
+      const result = await query
+      if (result.error) return []
+      rows.push(...(result.data || []))
+    }
+    return rows
   } catch {
     return []
   }
@@ -927,13 +935,18 @@ function buildFilterOptions(clients = [], users = []) {
   }
 }
 
-async function readAgentClientDirectory({ organisationId, profile, role, currentAgent, forceRefresh }) {
+async function readAgentClientDirectory({ organisationId, profile, role, currentAgent, currentMembership, forceRefresh }) {
   // Only seller rows depend on the transaction result. Everything else can start
   // together once the workspace is known.
   const transactions = isSupabaseConfigured && profile?.id
     ? (role === 'developer'
       ? import('../../domains/reporting/api').then(({ fetchDashboardOverview }) => fetchDashboardOverview({ developmentId: null, organisationId, includeSecondaryData: false })).then(overview => overview?.rows || [])
-      : fetchTransactionsByParticipantSummary({
+      : canAccessPrincipalExperience({ appRole: role, membershipRole: currentMembership?.workspaceRole || currentMembership?.workspace_role || currentMembership?.role })
+        ? fetchTransactionsListSummary({
+          organisationId, userId: profile.id, activeTransactionsOnly: true,
+          includePropertyDetails: false, readAllPages: true, forceRefresh,
+        })
+        : fetchTransactionsByParticipantSummary({
           userId: profile.id,
           roleType: role,
           organisationId,
@@ -945,7 +958,7 @@ async function readAgentClientDirectory({ organisationId, profile, role, current
     : Promise.resolve([])
   const transactionSources = transactions.then(async (transactionRows) => ({
     transactionRows,
-    sellerRows: await fetchTransactionSellerRows(transactionRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean)),
+    sellerRows: await fetchTransactionSellerRows(transactionRows.map((row) => normalizeText(row?.transaction?.id)).filter(Boolean), organisationId),
   }))
   const [crm, transaction, buyers, listings, canvassing, identitiesResult, usersResult] = await Promise.allSettled([
     listAgencyCrmLeadContacts(organisationId, { includeLocalFallback: false }),
@@ -1022,7 +1035,7 @@ export async function loadAgentClientDirectory({
     let request = directoryInflight.get(key)
     if (!request) {
       const generation = directoryGeneration
-      request = readAgentClientDirectory({ organisationId, profile, role, currentAgent, forceRefresh }).then(({ directory: result, cacheable }) => {
+      request = readAgentClientDirectory({ organisationId, profile, role, currentAgent, currentMembership, forceRefresh }).then(({ directory: result, cacheable }) => {
         if (generation === directoryGeneration && cacheable) {
           for (const [cacheKey, entry] of directoryCache) if (entry.expiresAt <= Date.now()) directoryCache.delete(cacheKey)
           directoryCache.set(key, { directory: result, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS })

@@ -179,7 +179,10 @@ function participantCacheKey(options = {}) {
 
 function listCacheKey(options = {}) {
   return `list:${JSON.stringify({
+    userId: text(options.userId),
     organisationId: text(options.organisationId),
+    transactionIds: Array.isArray(options.transactionIds) ? [...options.transactionIds].sort() : null,
+    readAllPages: options.readAllPages === true,
     developmentId: options.developmentId || null,
     stage: options.stage || 'all',
     financeType: options.financeType || 'all',
@@ -332,20 +335,30 @@ async function transactionRows(client, {
   organisationId = '',
   activeTransactionsOnly = true,
   includePropertyDetails = true,
+  readAllPages = false,
 } = {}) {
   if (Array.isArray(transactionIds) && transactionIds.length === 0) return []
-  let query = client.from('transactions').select(SUMMARY_SELECT)
-  if (Array.isArray(transactionIds)) query = query.in('id', transactionIds)
-  if (developmentId) query = query.eq('development_id', developmentId)
-  if (organisationId) query = query.eq('organisation_id', organisationId)
-  if (activeTransactionsOnly) query = query.eq('is_active', true)
-  let result = await query
+  const read = async (selection, withActiveFilter = true) => {
+    const query = () => {
+      let request = client.from('transactions').select(selection)
+      if (Array.isArray(transactionIds)) request = request.in('id', transactionIds)
+      if (developmentId) request = request.eq('development_id', developmentId)
+      if (organisationId) request = request.eq('organisation_id', organisationId)
+      if (withActiveFilter && activeTransactionsOnly) request = request.eq('is_active', true)
+      return request
+    }
+    if (!readAllPages) return query()
+    const data = []
+    for (let offset = 0; ; offset += 500) {
+      const page = await query().order('id').range(offset, offset + 499)
+      if (page.error) return page
+      data.push(...(page.data || []))
+      if ((page.data || []).length < 500) return { data, error: null }
+    }
+  }
+  let result = await read(SUMMARY_SELECT)
   if (result.error && missingSchema(result.error)) {
-    let fallback = client.from('transactions').select(SUMMARY_FALLBACK_SELECT)
-    if (Array.isArray(transactionIds)) fallback = fallback.in('id', transactionIds)
-    if (developmentId) fallback = fallback.eq('development_id', developmentId)
-    if (organisationId) fallback = fallback.eq('organisation_id', organisationId)
-    result = await fallback
+    result = await read(SUMMARY_FALLBACK_SELECT, readAllPages)
   }
   if (result.error) throw result.error
   const rows = normalizeSummaryRows((result.data || []).filter((row) => row?.is_active !== false))
