@@ -5,6 +5,7 @@ import { META_ADMIN_ROLES, META_STAFF_ROLES, canPublishPage, canReply, isMetaId,
 import { handleCrmLink } from './crmLinks.js'
 import { handleInboxMessaging } from './inboxMessaging.js'
 import { handleAutomations } from './automations.js'
+import { handleScreening } from './screening.js'
 import { handleAudiences, handleCampaignRoutes } from './audiences.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
@@ -58,6 +59,9 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(action==='campaign_reply_status')return result(db.rpc('whatsapp_campaign_reply_status',{p_org:org,p_actor:actor.userId,p_conversation:payload.conversationId}))
     if(['automation_list','automation_save','automation_enable','automation_disable','automation_templates','automation_runs'].includes(action)) {
       return handleAutomations({db,actor,org,action,payload,channel,graph,senderToken})
+    }
+    if(['screening_list','screening_listings','screening_save','screening_enable','screening_disable','screening_sessions','screening_pause','screening_handoff','screening_resume','screening_retry'].includes(action)) {
+      return handleScreening({db,actor,org,action,payload,channel,graph,senderToken})
     }
     const connectionActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender','business_app_status','start_business_app_sync','retry_business_app_updates']
     if(connectionActions.includes(action)&&!actor.isAdmin&&!actor.canConnectOwn) throw new Error('An organisation administrator must manage Meta connections.')

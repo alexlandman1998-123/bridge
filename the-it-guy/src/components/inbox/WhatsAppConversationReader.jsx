@@ -16,6 +16,7 @@ import { WhatsAppCampaignReplyNotice } from '../marketing/MetaCampaignRoutes'
 import WhatsAppCrmLink from '../marketing/WhatsAppCrmLink'
 import WhatsAppConversationWork from './WhatsAppConversationWork'
 import WhatsAppMessageMedia from './WhatsAppMessageMedia'
+import { WhatsAppScreeningSessions } from '../marketing/WhatsAppScreening'
 
 const date=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):''
 // The same authorised reader is used by the combined Inbox and Marketing.
@@ -54,6 +55,7 @@ export default function WhatsAppConversationReader({ workspace, conversationId: 
   }
   const current=detail.conversation
   const conversationTools=current ? <>
+        <WhatsAppScreeningSessions key={`screening:${selectionKey}`} organisationId={org} conversationId={selectedId}/>
         {!compact&&<WhatsAppConversationAssignment workspace={workspace} conversation={current} busy={Boolean(busy)} onAssign={id=>void update('assign_conversation',{assignedUserId:id})}/>}
         <WhatsAppCampaignReplyNotice key={`${selectionKey}:${current.last_message_at}:${current.assignment_version}`} organisationId={org} conversationId={current.id} accessScope={scope}/>{!compact&&<WhatsAppCrmLink key={`crm:${selectionKey}:${current.assignment_version}`} organisationId={org} accessScope={scope} conversationId={selectedId} assignmentVersion={current.assignment_version} onChanged={contactInfo.refresh}/>}
   </> : null

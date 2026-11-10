@@ -6,6 +6,7 @@ import { metaIntegrationRequest } from '../../services/metaIntegrationService'
 import { automationDraft, automationTemplate } from '../../../../supabase/functions/_shared/whatsappAutomation.js'
 import { templateFields } from '../../../../supabase/functions/_shared/whatsappCampaign.js'
 import { getAgencyLeadColumns } from '../../pages/agency/agencyLeadListModel'
+import WhatsAppScreening from './WhatsAppScreening'
 
 const triggers={new_lead:'New lead',no_response:'No response after a sent message',stage_changed:'Lead stage changes'}
 const weekdays=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -83,6 +84,7 @@ function AutomationWorkspace({ workspace }) {
     try {await metaIntegrationRequest(org,rule.enabled?'automation_disable':'automation_enable',{ruleId:rule.id,version:rule.version,confirmed:approved[rule.id]===true});if(live.current){setApproved({});setRevision(old=>old+1)}}catch(failure){if(live.current)setError(failure.message)}finally{lock.current=false;if(live.current)setBusy('')}
   }
   return <div className="space-y-5">
+    <WhatsAppScreening key={workspace.accessScope || org} workspace={workspace}/>
     <div className="flex flex-wrap gap-3"><Button disabled={loading||Boolean(busy)} onClick={()=>setEditor({id:'new'})}>New rule</Button><Button variant="secondary" disabled={loading||Boolean(busy)} onClick={()=>setRevision(old=>old+1)}>Refresh activity</Button></div>
     {error&&<p role="alert" className="rounded-lg bg-red-50 p-4 text-red-800">{error}</p>}
     {editor&&<RuleEditor key={editor.id} workspace={workspace} rule={editor.id==='new'?null:editor} onCancel={()=>setEditor(null)} onSaved={()=>{setEditor(null);setApproved({});setRevision(old=>old+1)}}/>}

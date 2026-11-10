@@ -1,5 +1,57 @@
 # bridge.
 
+## Automatic WhatsApp lead screening — prepared locally, 10 November 2026
+
+The primary app's WhatsApp Automations page can configure separate buyer and
+tenant screening for a saved listing. An interactive preview runs the same
+versioned question engine without saving replies or sending WhatsApp messages.
+Property prices and locations come from the saved listing; managers must confirm
+the remaining property terms, disclosed fees, pet policy and privacy information.
+Saving leaves screening off. Setup defaults to a single test recipient; the database and worker both enforce that boundary. A manager must explicitly select future property enquiries, save and enable again to move beyond the test. Explicit enablement applies to future enquiries only.
+
+The prepared conversation asks one question at a time, records each answer with
+its incoming message, skips irrelevant follow-ups and supports START, PAUSE,
+RESUME, AGENT and STOP. Answers are bound to the lead and listing, and completion
+or requested handoff creates one assigned agent review task. Screening answers
+and controls appear in the WhatsApp conversation's management panel. Two property
+enquiries on one company number cannot run overlapping questionnaires for the
+same phone. Historical imports do not trigger screening.
+The property's screening replaces the older automatic new-lead acknowledgement
+for that lead; other automatic messages cannot interrupt an active questionnaire.
+
+Only a connected shared company number can send. The approved opening template
+must identify the property, map the maximum question count, and explain START,
+AGENT and STOP. Current recorded one-to-one permission for that sender is required;
+an enquiry alone does not grant it. Missing permission, changed prices, reassigned
+leads, private/disconnected senders or uncertain sends stop automatic dispatch and
+appear for review. Free-text questions require the 24-hour reply window; a closed
+window uses the approved opening to invite the applicant to continue. Unconfirmed
+provider calls are never automatically repeated.
+
+The buyer and tenant questions come from the supplied screening designs. Identity
+documents are not requested in WhatsApp: the applicant can request a secure upload
+link or an alternative check, and the assigned agent handles that follow-up through
+the existing secure process. This feature does not implement a new public identity
+upload service, perform credit checks, score or reject applicants, confirm viewings,
+or approve applications or finance. Screening permission is recorded separately.
+
+Nothing in this screening change has been deployed, enabled or sent live. Release
+requires the additive `20261110153731_whatsapp_lead_screening_conversations.sql`
+and `20261110172426_whatsapp_screening_controlled_test_scope.sql` migrations, the matching `meta-integrations` bundle and new
+`whatsapp-screening-worker`, then the app. Retain `verify_jwt = false` only for the
+worker, which authenticates its own server key. The queue wakes the worker after
+each committed enquiry/reply; the minute scheduler is a recovery fallback. Both paths need the
+existing `arch9_project_url` and `arch9_service_role_key` Vault entries and pg_cron /
+pg_net; missing configuration is not successful activation. Existing WhatsApp inbox,
+permissions, ownership and messaging migrations are prerequisites. Review any other
+pending local changes before preparing a scoped release; do not broadly push them.
+
+Run `npm run test:whatsapp-screening` in this package for the actual PostgreSQL
+question/answer-to-outbox journey, API boundaries and rendered setup/preview checks.
+Use `deno check supabase/functions/whatsapp-screening-worker/index.ts` from the
+repository root for the worker entry point. These checks use local fixtures and
+mocked Meta calls, not real customer messages or provider approval.
+
 ## Canonical Inbox and email campaign source — 5 November 2026
 
 Use this package (`the-it-guy/`) for the current Inbox and email campaign UI,

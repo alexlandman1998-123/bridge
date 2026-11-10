@@ -466,3 +466,6 @@ verify_jwt = false
 
 [functions.marketing-click]
 verify_jwt = false
+
+[functions.whatsapp-screening-worker]
+verify_jwt = false
