@@ -1,3 +1,4 @@
+import { requirementRecoveryKey, readRequirementCommand, retainRequirementCommand, clearRequirementCommand } from './documentRequirementCommandRecovery.js'
 import { validateDocumentUploadFile, withDocumentUploadMimeType } from '../../lib/documentUploadPolicy.js'
 import { notifyDocumentRequirementContextChanged } from './documentRequirementReadService.js'
 import { isDefiniteUploadSaveRejection } from '../../lib/documentUploadRecovery.js'
@@ -32,6 +33,8 @@ export async function executeDocumentRequirementCommand(client, command) {
   if (result?.saved !== true || result.commandId !== commandId || !result.requirement?.id) throw unconfirmed()
   if (requirementId && result.requirement.id !== requirementId) throw unconfirmed()
   if (action === 'upload' && !uuid.test(result.uploadId || '')) throw unconfirmed()
+  if (action === 'review' && (result.uploadId !== payload.documentId || result.requirement.status !==
+    ({ start_review: 'under_review', approve: 'approved', reject: 'rejected' })[payload.decision])) throw unconfirmed()
   if (action === 'withdraw' && (result.requirement.satisfied_by_document_id || result.requirement.latest_upload_id || result.uploadId !== payload.documentId)) throw unconfirmed()
   notifyDocumentRequirementContextChanged(result.refreshContexts)
   return result
@@ -88,4 +91,29 @@ export async function uploadDocumentRequirementFile(client, command, file, { onP
   const result = await executeDocumentRequirementCommand(client, command)
   report('complete', 'Uploaded', { fileName, documentId: result.uploadId })
   return result
+}
+
+export async function reviewDocumentRequirement(client, { requirement, document, action, reason = '', storage = globalThis.localStorage } = {}) {
+  const requirementId = requirement.id
+  const db = client
+  const { data, error } = await db.auth.getUser()
+  if (error || !data?.user?.id) throw new Error('Sign in again before reviewing documents.')
+  const contextType = requirement.context_type, contextId = requirement.context_id
+  const key = `${requirementRecoveryKey(db, data.user.id, contextType, contextId)}:review:${requirementId}`
+  const pending = readRequirementCommand(storage, key)
+  if (pending && (pending.payload.decision !== action || pending.payload.documentId !== document.id || pending.payload.reason !== String(reason || '').trim())) {
+    throw new Error('Retry the unfinished review decision before making a different decision.')
+  }
+  const command = pending || { commandId: crypto.randomUUID(), action: 'review', contextType, contextId,
+    requirementId, expectedRevision: requirement.command_revision,
+    payload: { decision: action, documentId: document.id, reason: String(reason || '').trim() } }
+  retainRequirementCommand(storage, key, command)
+  try {
+    const result = await executeDocumentRequirementCommand(db, command)
+    clearRequirementCommand(storage, key, command)
+    return result
+  } catch (failure) {
+    if (isDefiniteUploadSaveRejection(failure)) clearRequirementCommand(storage, key, command)
+    throw failure
+  }
 }

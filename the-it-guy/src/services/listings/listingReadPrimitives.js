@@ -24,9 +24,13 @@ export function normalizeUuid(value) {
 export function isMissingTableError(error, tableName = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
+  // Column/function cache errors also mention the table. They must reach the
+  // projection fallback rather than permanently caching an empty document set.
+  if (['42703', 'pgrst204', 'pgrst202', 'pgrst200'].includes(code)) return false
   const message = String(error.message || '').toLowerCase()
   const status = Number(String(error.status || error.statusCode || 0))
   const text = String(message).toLowerCase()
+  if (!code && /\b(column|function|relationship)\b/.test(text)) return false
   const tableNameHint = normalizeText(tableName).toLowerCase()
   const mentionsTable = Boolean(tableNameHint && text.includes(tableNameHint))
   return (

@@ -891,7 +891,8 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     commissionTermsAvailable: Boolean(commissionTerms),
     onboardingCompleted: Boolean(onboardingCompleted),
     sellerProfileCaptured: !sellerOwnershipUnidentified && Boolean(
-      onboarding?.sellerProfileCapturedAt || onboarding?.seller_profile_captured_at,
+      onboarding?.sellerProfileCapturedAt || onboarding?.seller_profile_captured_at ||
+      normalizeKey(onboarding?.sellerProfileCaptureSource || onboarding?.seller_profile_capture_source) === 'listing_seller_profile_capture',
     ),
     sellerName,
     authorisedSignatory,

@@ -16,7 +16,7 @@ import SellerDisclosurePreparation from '../components/documents/SellerDisclosur
 import { buildSellerDisclosurePreparationPatch, isSellerDisclosureCaptureLocked } from '../lib/sellerAgentAssistedDisclosure.js'
 import { watchInitialListingPublication, requireSettledListingPublication } from '../services/listings/listingInitialPublicationService'
 import SellerDocumentWorkflowActions from '../components/documents/SellerDocumentWorkflowActions'
-import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
+import { SELLER_DOCUMENT_ACTIONS, SELLER_DOCUMENT_SELECTION_KEYS, getSellerDocumentSigningRequest, sellerDocumentHasActiveSigning, sellerDocumentHasUploadedEvidence } from '../core/documents/sellerDocumentWorkflow'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../lib/documentUploadPolicy.js'
 import { prepareSellerMandateReviewPreview } from '../lib/sellerMandateReviewPreview.js'
 import SellerMandateDetailsEditor from '../components/documents/SellerMandateDetailsEditor.jsx'
@@ -359,8 +359,8 @@ import {
   buildListingSellerDocumentProgress,
   buildListingSellerDocumentsSummary,
   resolveListingSellerDocumentActivity,
+  resolveListingSellerDocumentDisplayStatus,
   resolveListingSellerDocumentActions,
-  resolveListingSellerDocumentStatus,
 } from '../services/listings/listingSellerDocumentsPresentation'
 import {
   buildListingSellerDocumentDeliveryIndex,
@@ -1749,9 +1749,8 @@ function groupListingDocumentsForDisplay(documents = []) {
   return grouped
 }
 
-function isListingDocumentComplete(document = {}) {
-  if (document?.satisfied === true || document?.complete === true) return true
-  return ['approved', 'completed', 'verified', 'signed'].includes(normalizeKey(document?.status))
+function isListingDocumentComplete(document = {}, signingRequests = []) {
+  return resolveListingSellerDocumentDisplayStatus(document, { signingRequests }).key === 'complete'
 }
 
 function getSellerDocumentSlaPresentation(reviewSla = null) {
@@ -3783,6 +3782,7 @@ function AgentListingDetail({ mobile = false } = {}) {
   const [sellerDocumentUploadModalOpen, setSellerDocumentUploadModalOpen] = useState(false)
   const [newListingDocumentOpen, setNewListingDocumentOpen] = useState(false)
   const [listingDocumentToRemove, setListingDocumentToRemove] = useState(null)
+  const [listingDocumentToUpload, setListingDocumentToUpload] = useState(null)
   const [sellerDocumentUploadProgress, setSellerDocumentUploadProgress] = useState({})
   const [buyerOtpUploadKey, setBuyerOtpUploadKey] = useState('')
   const [sellerPackHandoffAction, setSellerPackHandoffAction] = useState('')
@@ -3816,6 +3816,7 @@ function AgentListingDetail({ mobile = false } = {}) {
   const [sellerMandateSignatureRoute, setSellerMandateSignatureRouteState] = useState('manual_upload')
   const preparingPrintableMandate = sellerDocumentPreparationKey === 'signed_mandate' && sellerMandateSignatureRoute === 'manual_upload'
   const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
+  const [sellerPortalSigningRequestsLoading, setSellerPortalSigningRequestsLoading] = useState(false)
   const [sellerPortalSigningRequestsError, setSellerPortalSigningRequestsError] = useState('')
   const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
   const [sellerPortalSignedPreview, setSellerPortalSignedPreview] = useState(null)
@@ -3940,7 +3941,7 @@ function AgentListingDetail({ mobile = false } = {}) {
   const loadedCoreListingIdRef = useRef('')
   const [listingSupportingDataLoading, setListingSupportingDataLoading] = useState(true)
   const [listingSupportingDataReady, setListingSupportingDataReady] = useState(false)
-  const needsListingDocuments = sellerWorkspaceTab === 'documents' || activeTab === 'documents' || activeTab === 'offers' || sellerDocumentSendOpen || sellerDocumentUploadModalOpen
+  const needsListingDocuments = activeTab === 'overview' || (activeTab === 'seller' && sellerWorkspaceTab === 'overview') || sellerWorkspaceTab === 'documents' || activeTab === 'documents' || activeTab === 'offers' || sellerDocumentSendOpen || sellerDocumentUploadModalOpen
   const loadListingData = useCallback(async ({ showLoading = true } = {}) => {
     const loadSequence = ++listingLoadSequence.current
     setListingSupportingDataLoading(true)
@@ -4071,16 +4072,18 @@ function AgentListingDetail({ mobile = false } = {}) {
     let active = true
     setSellerPortalSigningRequests([])
     setSellerPortalSigningRequestsError('')
+    setSellerPortalSigningRequestsLoading(Boolean(isSupabaseConfigured && listingRecord?.id && needsListingDocuments))
     let timer = null
-    if (listingRecord?.id && sellerWorkspaceTab === 'documents') {
+    if (isSupabaseConfigured && listingRecord?.id && needsListingDocuments) {
       const refresh = () => listSellerPortalSigningRequests(listingRecord.id)
         .then((result) => { if (active) { setSellerPortalSigningRequests(result.documents || []); setSellerPortalSigningRequestsError('') } })
         .catch(() => { if (active) setSellerPortalSigningRequestsError('Signing request status could not be refreshed. Reopen Documents to retry, and check the request before sending again.') })
+        .finally(() => { if (active) setSellerPortalSigningRequestsLoading(false) })
       void refresh()
       timer = window.setInterval(refresh, 60_000)
     }
     return () => { active = false; if (timer) window.clearInterval(timer) }
-  }, [listingRecord?.id, sellerWorkspaceTab])
+  }, [listingRecord?.id, needsListingDocuments])
 
   useEffect(() => {
     if (sellerWorkspaceTab !== 'documents' || !listingRecord?.id) return
@@ -7539,7 +7542,7 @@ function AgentListingDetail({ mobile = false } = {}) {
     setDetailMessage('')
     setSellerDocumentWorkflowAction(actionKey)
     try {
-      const result = await reviewSellerDocument({ document, action, reason })
+      const result = await reviewSellerDocument({ item, document, action, reason })
       await loadListingData()
       await loadSellerDocumentDeliveries()
       const title = item?.title || item?.label || 'Seller document'
@@ -9988,12 +9991,15 @@ function AgentListingDetail({ mobile = false } = {}) {
     [activeListingDocumentTab, listingDocumentGroups],
   )
   const listingSellerDocumentSummary = useMemo(
-    () => buildListingSellerDocumentsSummary(sellerDocumentExperienceItems),
-    [sellerDocumentExperienceItems],
+    () => buildListingSellerDocumentsSummary(sellerDocumentExperienceItems, { signingRequests: sellerPortalSigningRequests }),
+    [sellerDocumentExperienceItems, sellerPortalSigningRequests],
   )
   const listingSellerDocumentProgress = useMemo(
-    () => buildListingSellerDocumentProgress(listingSellerDocumentSummary, sellerDocumentSource?.requirementState),
-    [listingSellerDocumentSummary, sellerDocumentSource?.requirementState],
+    () => buildListingSellerDocumentProgress(listingSellerDocumentSummary, sellerDocumentSource?.requirementState, {
+      loading: sellerPortalSigningRequestsLoading || (isSupabaseConfigured && needsListingDocuments && !listingRecord?.canonicalDocumentSnapshot && listingSupportingDataLoading),
+      unavailable: Boolean(sellerPortalSigningRequestsError || listingRecord?.canonicalDocumentError) || (isSupabaseConfigured && needsListingDocuments && !listingId?.startsWith('development-') && !listingRecord?.canonicalDocumentSnapshot && !listingSupportingDataLoading),
+    }),
+    [listingSellerDocumentSummary, sellerDocumentSource?.requirementState, sellerPortalSigningRequestsLoading, sellerPortalSigningRequestsError, listingRecord?.canonicalDocumentSnapshot, listingRecord?.canonicalDocumentError, listingSupportingDataLoading, listingId, needsListingDocuments],
   )
   const sellerDocumentDeliveryIndex = useMemo(
     () => buildListingSellerDocumentDeliveryIndex(sellerDocumentDeliveries),
@@ -16043,7 +16049,9 @@ function AgentListingDetail({ mobile = false } = {}) {
                       <h2 className="text-base font-semibold text-[#142132]">Document Progress</h2>
                       <button type="button" onClick={() => openSellerWorkspaceSection('documents')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">Open documents <ChevronRight size={14} /></button>
                     </div>
-                    {listingSellerDocumentProgress.state === 'setup_needed' ? (
+                    {['loading', 'unavailable'].includes(listingSellerDocumentProgress.state) ? (
+                      <p role="status" className="mt-4 text-sm text-[#607387]">{listingSellerDocumentProgress.state === 'loading' ? 'Loading document progress…' : 'Document progress could not be loaded. Open Documents or refresh to retry.'}</p>
+                    ) : listingSellerDocumentProgress.state === 'setup_needed' ? (
                       <div className="mt-4 rounded-[12px] border border-[#f0d7a8] bg-[#fffaf0] p-3 text-sm text-[#815919]">
                         <p className="font-semibold">Seller setup needed</p>
                         <p className="mt-1 text-xs leading-5">Confirm the seller type before relying on document progress.</p>
@@ -16054,7 +16062,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                     ) : (
                       <div className="mt-4 flex items-center gap-4">
                         <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full p-[7px]" style={{ background: `conic-gradient(#177556 ${listingSellerDocumentProgress.percent}%, #e5ebf2 ${listingSellerDocumentProgress.percent}% 100%)` }} role="progressbar" aria-label="Seller document completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={listingSellerDocumentProgress.percent}>
-                          <span className="grid h-full w-full place-items-center rounded-full bg-white text-sm font-semibold text-[#142132]">{100 - listingSellerDocumentProgress.percent}% left</span>
+                          <span className="grid h-full w-full place-items-center rounded-full bg-white text-sm font-semibold text-[#142132]">{listingSellerDocumentProgress.percent}%</span>
                         </div>
                         <div>
                           <p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.complete} of {listingSellerDocumentProgress.total} approved</p>
@@ -16376,7 +16384,7 @@ function AgentListingDetail({ mobile = false } = {}) {
             const getRow = (sectionKey, rowKey) => getSection(sectionKey).rows.find((row) => row.key === rowKey) || null
             const rowValue = (sectionKey, rowKey) => presentSellerWorkspaceValue(getRow(sectionKey, rowKey)?.value)
             const rowHasValue = (sectionKey, rowKey) => isSellerProfileFilled(getRow(sectionKey, rowKey)?.rawValue)
-            const completedDocumentCount = sellerDocumentExperienceItems.filter(isListingDocumentComplete).length
+            const completedDocumentCount = sellerDocumentExperienceItems.filter(document => isListingDocumentComplete(document, sellerPortalSigningRequests)).length
             const documentTotalCount = sellerDocumentExperienceItems.length
             const signedMandateUrl = mandateWorkspace.signedUrl || (mandateWorkspace.isSigned ? mandateWorkspace.viewUrl : '')
             const findDocumentComplete = (pattern) =>
@@ -16385,7 +16393,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                 document?.label,
                 document?.sourceLabel,
                 document?.status,
-              ].map((value) => String(value || '').toLowerCase()).join(' ')) && isListingDocumentComplete(document))
+              ].map((value) => String(value || '').toLowerCase()).join(' ')) && isListingDocumentComplete(document, sellerPortalSigningRequests))
             const onboardingItems = [
               {
                 label: 'Seller details',
@@ -16827,7 +16835,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                     </div>
                     {needsListingDocuments && listingSupportingDataReady ? <div className="mt-5 divide-y divide-[#edf2f7]">
                       {visibleDocumentRows.length ? visibleDocumentRows.map((document) => {
-                        const status = resolveListingSellerDocumentStatus(document)
+                        const status = resolveListingSellerDocumentDisplayStatus(document, { signingRequests: sellerPortalSigningRequests })
                         return (
                           <div key={document.key || document.id || document.label} className="flex items-center justify-between gap-3 py-2">
                             <div className="flex min-w-0 items-center gap-3">
@@ -16904,6 +16912,7 @@ function AgentListingDetail({ mobile = false } = {}) {
             <section className="space-y-5">
               {sellerPortalSigningRequestsError ? <p role="alert" className="rounded-xl border border-[#f0d7a8] bg-[#fffaf0] px-4 py-3 text-sm text-[#815919]">{sellerPortalSigningRequestsError}</p> : null}
           <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open={newListingDocumentOpen} onClose={() => setNewListingDocumentOpen(false)} />
+          {listingDocumentToUpload ? <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open initialSelectedRequirementId={listingDocumentToUpload.canonicalRequirementInstanceId || listingDocumentToUpload.canonical_requirement_instance_id || listingDocumentToUpload.id} onClose={() => setListingDocumentToUpload(null)} /> : null}
           {listingDocumentToRemove ? <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open initialRequirementId={listingDocumentToRemove.canonicalRequirementInstanceId || listingDocumentToRemove.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.id || listingDocumentToRemove.requirementId || listingDocumentToRemove.requirement_id || listingDocumentToRemove.id || listingDocumentToRemove.key} documentLabel={listingDocumentToRemove.label} onClose={() => setListingDocumentToRemove(null)} /> : null}
               {sellerDocumentSource?.requirementState?.provisional ? (
                 <div className="flex items-start gap-3 rounded-[18px] border border-[#f0d7a8] bg-[#fffaf0] px-4 py-3 text-[#815919]" role="status">
@@ -16940,15 +16949,15 @@ function AgentListingDetail({ mobile = false } = {}) {
                     {listingSellerDocumentProgress.percent === null ? <span className="grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-xs font-bold text-[#607387]">—</span> : (
                       <span className="relative grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-[0.68rem] font-bold text-[#1f7d44]" role="progressbar" aria-label="Seller document completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={listingSellerDocumentProgress.percent}>{listingSellerDocumentProgress.percent}%</span>
                     )}
-                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Setup needed' : `${listingSellerDocumentSummary.complete} / ${listingSellerDocumentSummary.total}`}</p><p className="text-xs text-[#607387]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Checklist provisional' : 'approved'}</p></div>
+                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.state === 'loading' ? 'Loading…' : listingSellerDocumentProgress.state === 'unavailable' ? 'Unavailable' : listingSellerDocumentProgress.state === 'setup_needed' ? 'Setup needed' : `${listingSellerDocumentProgress.complete} / ${listingSellerDocumentProgress.total}`}</p><p className="text-xs text-[#607387]">{['loading', 'unavailable'].includes(listingSellerDocumentProgress.state) ? 'Document progress' : listingSellerDocumentProgress.state === 'setup_needed' ? 'Checklist provisional' : 'approved'}</p></div>
                   </div>
                   <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
                     <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#fff8ea] text-[#a56b14]"><Send size={18} /></span>
-                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.awaitingSeller}</p><p className="text-xs text-[#607387]">awaiting seller</p></div>
+                    <div><p className="text-lg font-semibold text-[#142132]">{['loading', 'unavailable'].includes(listingSellerDocumentProgress.state) ? '—' : listingSellerDocumentSummary.awaitingSeller}</p><p className="text-xs text-[#607387]">awaiting seller</p></div>
                   </div>
                   <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
                     <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#eef6ff] text-[#2f628d]"><Eye size={18} /></span>
-                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.readyForReview}</p><p className="text-xs text-[#607387]">ready for review</p></div>
+                    <div><p className="text-lg font-semibold text-[#142132]">{['loading', 'unavailable'].includes(listingSellerDocumentProgress.state) ? '—' : listingSellerDocumentSummary.readyForReview}</p><p className="text-xs text-[#607387]">ready for review</p></div>
                   </div>
                 </div>
 
@@ -16957,7 +16966,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                 <nav className="flex gap-7 overflow-x-auto border-t border-[#edf2f7] px-5" aria-label="Listing document categories" role="tablist">
                   {listingDocumentGroups.map((group, groupIndex) => {
                     const isActive = activeListingDocumentGroup?.key === group.key
-                    const completeCount = group.documents.filter(isListingDocumentComplete).length
+                    const completeCount = group.documents.filter(document => isListingDocumentComplete(document, sellerPortalSigningRequests)).length
                     return (
                       <button
                         key={group.key}
@@ -17057,8 +17066,8 @@ function AgentListingDetail({ mobile = false } = {}) {
                     tabIndex={0}
                     className="overflow-hidden rounded-[18px] border border-[#dde4ee] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.035)] outline-none focus-visible:ring-2 focus-visible:ring-[#2f6f9f]"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3 px-5 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
+                      <div className="flex min-w-0 flex-1 basis-72 items-start gap-3">
                         <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[15px] border ${group.toneClasses}`}>
                           <GroupIcon size={19} />
                         </span>
@@ -17067,9 +17076,9 @@ function AgentListingDetail({ mobile = false } = {}) {
                           <p className="mt-1 text-sm leading-6 text-[#607387]">{group.description}</p>
                         </div>
                       </div>
-                      <div className="mr-5 mt-4 flex flex-wrap items-center gap-2">
+                      <div className="flex max-w-full flex-wrap items-center gap-2">
                         {group.key === 'sales' ? <Button type="button" size="sm" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => void handleStartListingMandateDocument()}>Create printable mandate</Button> : null}
-                        <Button type="button" size="sm" variant="secondary" onClick={() => setNewListingDocumentOpen(true)}>
+                        <Button type="button" size="sm" variant="secondary" className="max-w-full whitespace-normal text-left leading-5" onClick={() => setNewListingDocumentOpen(true)}>
                           <Upload size={14} />
                           Upload/Request New Document
                         </Button>
@@ -17084,24 +17093,22 @@ function AgentListingDetail({ mobile = false } = {}) {
 
                     {group.documents.length ? (
                       <div className="border-t border-[#e8eef4]">
-                        <div className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_440px] gap-4 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] xl:grid">
+                        <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(170px,0.9fr)_minmax(130px,0.8fr)_240px] gap-6 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] xl:grid">
                           <span>Document</span><span>Status</span><span>Activity</span><span className="text-right">Actions</span>
                         </div>
                         {group.documents.map((doc) => {
                           const uploadProgress = sellerDocumentUploadProgress[getSellerDocumentUploadKey(doc)]
-                          const baseStatus = resolveListingSellerDocumentStatus(doc)
+                          const status = resolveListingSellerDocumentDisplayStatus(doc, { signingRequests: sellerPortalSigningRequests })
                           const actions = resolveListingSellerDocumentActions(doc)
                           const downloadable = actions.canOpen && (doc.uploaded || (doc.status === 'approved' && Boolean(doc.generatedHtml || doc.generated_html)))
-                          const activity = resolveListingSellerDocumentActivity(doc)
+                          const activity = resolveListingSellerDocumentActivity(doc, { displayStatus: status })
                           const delivery = sellerDocumentDeliveryIndex.forDocument(doc)
                           const deliveryPresentation = getSellerDocumentDeliveryPresentation(delivery)
                           const physicalCopy = getSellerPhysicalSigningCopy(doc)
                           const portalDocumentKey = physicalCopy?.key || physicalCopy?.requirementKey || doc.key
                           const portalRequest = physicalCopy ? getSellerDocumentSigningRequest(sellerPortalSigningRequests, portalDocumentKey, physicalCopy.versionId) : null
-                          const workflow = buildSellerDocumentWorkflow({ item: doc, copy: physicalCopy, request: portalRequest })
-                          const status = SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? { ...baseStatus, label: workflow.state === 'not_prepared' ? 'Not prepared' : workflow.label } : baseStatus
                           return (
-                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 xl:min-h-[72px] xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_440px] xl:items-center xl:gap-4">
+                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start xl:min-h-[88px] xl:grid-cols-[minmax(0,1.6fr)_minmax(170px,0.9fr)_minmax(130px,0.8fr)_240px] xl:items-center xl:gap-6">
                             <div className="flex min-w-0 items-start gap-3">
                               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#2f628d]"><FileText size={16} /></span>
                               <div className="min-w-0">
@@ -17116,10 +17123,10 @@ function AgentListingDetail({ mobile = false } = {}) {
                                 })() : null}
                               </div>
                             </div>
-                            <div>
+                            <div className="sm:text-right xl:text-left">
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.classes}`}>{status.label}</span>
                             </div>
-                            <div className="text-xs leading-5 text-[#607387]">
+                            <div className="min-w-0 break-words text-xs leading-5 text-[#607387] sm:col-start-1 sm:row-start-2 xl:col-start-3 xl:row-start-1">
                               <span className="font-semibold text-[#425970] xl:hidden">Activity: </span>
                               {activity.lastEventLabel}{activity.lastEventAt ? <span className="block text-[#74879d]">{formatDate(activity.lastEventAt)}</span> : null}
                               {deliveryPresentation ? (
@@ -17129,7 +17136,14 @@ function AgentListingDetail({ mobile = false } = {}) {
                                 </div>
                               ) : null}
                             </div>
-                            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:col-start-2 sm:row-start-2 sm:justify-end xl:col-start-4 xl:row-start-1">
+                              <Button type="button" size="sm" variant="secondary" aria-label={`Download ${doc.label}`} title={downloadable ? 'Download saved document' : 'No downloadable file is available yet'} disabled={!downloadable || Boolean(openingSellerDocumentKey || sellerDocumentUploadKey)} onClick={() => void handleOpenSellerDocument(doc, { download: true })}>
+                                {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}Download
+                              </Button>
+                              <ListingDocumentActions label={doc.label}>
+                              {doc.sharedRequirement ? <Button type="button" size="sm" variant="secondary" onClick={() => setListingDocumentToUpload(doc)}>
+                                <Upload size={14} />{doc.hasUploadedDocument ? 'Replace file' : 'Upload file'}
+                              </Button> : null}
                               {!SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] && actions.canUpload ? (
                                 <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition focus-within:ring-2 focus-within:ring-[#2f6f9f] ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                   {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
@@ -17144,9 +17158,6 @@ function AgentListingDetail({ mobile = false } = {}) {
                                   />
                                 </label>
                               ) : null}
-                              <Button type="button" size="sm" variant="secondary" aria-label={`Download ${doc.label}`} title={downloadable ? 'Download saved document' : 'No downloadable file is available yet'} disabled={!downloadable || Boolean(openingSellerDocumentKey || sellerDocumentUploadKey)} onClick={() => void handleOpenSellerDocument(doc, { download: true })}>
-                                {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}Download
-                              </Button>
                               {SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey] ? <SellerDocumentWorkflowActions
                                 compact
                                 item={doc} copy={physicalCopy} request={portalRequest}
@@ -17157,7 +17168,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                                 onReview={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)}
                                 onRefresh={() => void refreshSellerDocumentSigning()}
                               /> : null}
-                              {actions.canRequest || delivery?.retryable || (!physicalCopy && (actions.canOpen || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html)))) ? <ListingDocumentActions label={doc.label}>
+
                               {actions.canRequest ? (
                                 <Button type="button" size="sm" onClick={() => void handleSellerDocumentRequest(doc)} disabled={Boolean(sellerDocumentWorkflowAction)}>
                                   {sellerDocumentWorkflowAction === `${doc.key || doc.id}:request` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
@@ -17181,7 +17192,7 @@ function AgentListingDetail({ mobile = false } = {}) {
                                   {getSellerPhysicalSigningCopy(doc) ? 'Generate and download' : 'View'}
                                 </button>
                               ) : null}
-                              </ListingDocumentActions> : null}
+
                               <SellerDocumentReviewActions
                                 item={doc}
                                 busyAction={sellerDocumentWorkflowAction}
@@ -17191,9 +17202,10 @@ function AgentListingDetail({ mobile = false } = {}) {
                                 requireSignedEvidenceCheck={Boolean(SELLER_DOCUMENT_SELECTION_KEYS[portalDocumentKey])}
                                 compact
                               />
-                              <button type="button" aria-label={`Mark ${doc.label} as not relevant`} title="Not relevant to this listing" disabled={Boolean(sellerDocumentWorkflowAction || sellerDocumentUploadKey)} onClick={() => setListingDocumentToRemove(doc)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white text-[#71849a] transition hover:border-[#efcbc8] hover:bg-red-50 hover:text-[#963d35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#963d35] disabled:opacity-50"><X size={15} /></button>
+                              <button type="button" aria-label={`Mark ${doc.label} as not relevant`} title="Not relevant to this listing" disabled={Boolean(sellerDocumentWorkflowAction || sellerDocumentUploadKey)} onClick={() => setListingDocumentToRemove(doc)} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-xs font-semibold border border-[#dbe6f2] bg-white text-[#71849a] transition hover:border-[#efcbc8] hover:bg-red-50 hover:text-[#963d35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#963d35] disabled:opacity-50"><X size={15} />Not relevant to this listing</button>
+                              </ListingDocumentActions>
                             </div>
-                            {uploadProgress ? <div className="min-w-0 xl:col-span-4"><DocumentUploadProgress progress={uploadProgress} /></div> : null}
+                            {uploadProgress ? <div className="col-span-full min-w-0"><DocumentUploadProgress progress={uploadProgress} /></div> : null}
                           </div>
                           )
                         })}
@@ -17346,6 +17358,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       {activeTab === 'documents' && listingSupportingDataReady ? (
         <section className="space-y-5">
           <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open={newListingDocumentOpen} onClose={() => setNewListingDocumentOpen(false)} />
+          {listingDocumentToUpload ? <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open initialSelectedRequirementId={listingDocumentToUpload.canonicalRequirementInstanceId || listingDocumentToUpload.canonical_requirement_instance_id || listingDocumentToUpload.id} onClose={() => setListingDocumentToUpload(null)} /> : null}
           {listingDocumentToRemove ? <DocumentRequirementManager client={supabase} contextType="private_listing" contextId={listingRecord?.id} party="seller" presentation="dialog" open initialRequirementId={listingDocumentToRemove.canonicalRequirementInstanceId || listingDocumentToRemove.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.canonical_requirement_instance_id || listingDocumentToRemove.original?.requirement?.id || listingDocumentToRemove.requirementId || listingDocumentToRemove.requirement_id || listingDocumentToRemove.id || listingDocumentToRemove.key} documentLabel={listingDocumentToRemove.label} onClose={() => setListingDocumentToRemove(null)} /> : null}
           {sellerDocumentSource?.requirementState?.provisional ? (
             <section data-testid="listing-seller-document-provisional-state" className="flex items-start justify-between gap-4 rounded-[20px] border border-[#f0d7a8] bg-[#fffaf0] p-4 text-[#815919]" role="status">

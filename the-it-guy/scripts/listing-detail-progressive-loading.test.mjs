@@ -18,6 +18,7 @@ function fixture() {
     readAgentPrivateListings: () => [], sanitizePrivateListingRows: rows => rows,
     upsertListingRecord: (rows, record) => [...rows.filter(row => row.id !== record.id), record],
     getPrivateListingRecordId: row => row?.id || '', getPrivateListingActivity: async () => [],
+    getListingChannelExpiries: async () => [], setChannelExpiries() {}, setChannelExpiryAvailable() {},
     setListingSupportingDataLoading(value) { context.busy = value },
     setListingSupportingDataReady(value) { context.ready = value },
     setLoading(value) { context.loading = value },
@@ -28,6 +29,26 @@ function fixture() {
   const load = new Function('context', `with (context) { return ${expression}; }`)(context)
   return { context, load }
 }
+
+test('the listing overview requests the same saved documents as the Documents tab', async () => {
+  const expression = source.match(/const needsListingDocuments = ([^\n]+)/)[1]
+  const needsDocuments = new Function('activeTab','sellerWorkspaceTab','sellerDocumentSendOpen','sellerDocumentUploadModalOpen',`return ${expression}`)
+  assert.equal(needsDocuments('seller','overview',false,false),true)
+  assert.equal(needsDocuments('seller','documents',false,false),true)
+  assert.equal(needsDocuments('seller','marketing',false,false),false)
+  const {context,load} = fixture()
+  context.needsListingDocuments = needsDocuments('seller','overview',false,false)
+  let relatedOptions
+  context.getPrivateListing = async (_id, options) => {
+    if (options.includeRelatedData === false) return {id:context.listingId}
+    relatedOptions = options
+    return {id:context.listingId,documents:[{id:'saved-file'}],canonicalDocumentSnapshot:{requirements:[{id:'saved-requirement'}]}}
+  }
+  await load()
+  assert.equal(relatedOptions.includeRequirementsAndDocuments,true)
+  assert.equal(context.rows[0].documents[0].id,'saved-file')
+  assert.equal(context.rows[0].canonicalDocumentSnapshot.requirements[0].id,'saved-requirement')
+})
 
 test('the core listing renders before a slow related-data read, with editing still gated', async () => {
   const { context, load } = fixture()

@@ -29,6 +29,20 @@ test('current negative answers remove historical HOA and installation follow-ups
   }
 })
 
+for (const listingStatus of ['seller_lead', 'onboarding_sent']) test(`saved profile capture source prepares rates requirements during ${listingStatus}`, () => {
+  const result = syncSellerDocumentRequirements({
+    id: 'saved-manual-profile', listingStatus,
+    sellerOnboarding: { status: 'sent', formData: {
+      ownershipType: 'individual', ownershipRouteConfirmed: true,
+      sellerProfileCaptureSource: 'listing_seller_profile_capture',
+      propertyStructureType: 'sectional_title', maritalStatus: 'not_married',
+    } },
+  }, [])
+  assert.equal(result.requirementProfile.sellerProfileCaptured, true)
+  assert.equal(result.requirementProfile.onboardingCompleted, false)
+  assert.equal(result.generatedRequirements.some(row => row.requirement_key === 'rates_account'), true)
+})
+
 test('manual seller capture prepares upload requirements without completing or activating the listing', () => {
   const listing = {
     id: 'listing-manual-partial',

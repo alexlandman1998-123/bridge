@@ -8,11 +8,12 @@ vi.mock('../../lib/supabaseClient', () => ({
 }))
 import { uploadPrivateListingDocument, getPrivateListingDocuments } from '../privateListingService.js'
 
-let tables, events, objects
+let tables, events, objects, simulateMissingReviewColumn
 const listingId = '00000000-0000-4000-8000-000000000001'
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Unexpected external request') }))
   events = []; objects = new Map()
+  simulateMissingReviewColumn = false
   tables = {
     private_listings: [{ id: listingId, organisation_id: '00000000-0000-4000-8000-000000000003', listing_status: 'onboarding_sent', listing_visibility: 'internal', is_active: false }],
     private_listing_seller_onboarding: [{ id: '00000000-0000-4000-8000-000000000002', private_listing_id: listingId, status: 'sent', seller_type: 'individual', form_data: { ownershipType: 'individual', maritalStatus: 'not_married', propertyStructureType: 'sectional_title', sellerProfileCapturedAt: '2026-11-07T08:00:00Z' } }],
@@ -21,9 +22,9 @@ beforeEach(() => {
   client.auth.getUser.mockResolvedValue({ data: { user: { id: '00000000-0000-4000-8000-000000000004' } }, error: null })
   client.rpc.mockImplementation(async name => ({ data: name === 'bridge_promote_private_listing_document_row' ? { promotion_status: 'pending_transaction' } : null, error: null }))
   client.from.mockImplementation(table => {
-    const filters = []; let action = 'read', payload, single = false, result
+    const filters = []; let action = 'read', payload, single = false, result, projection = ''
     const query = {
-      select() { return this }, order() { return this }, limit() { return this }, range() { return this }, abortSignal() { return this },
+      select(fields) { projection = fields || ''; return this }, order() { return this }, limit() { return this }, range() { return this }, abortSignal() { return this },
       eq(key, value) { filters.push(row => row[key] === value); return this },
       in(key, values) { filters.push(row => values.includes(row[key])); return this },
       insert(value) { action = 'insert'; payload = value; return this },
@@ -32,6 +33,9 @@ beforeEach(() => {
       single() { single = true; return this }, maybeSingle() { single = true; return this },
       then(resolve, reject) {
         if (!result) result = Promise.resolve().then(() => {
+          if (simulateMissingReviewColumn && action === 'read' && table === 'private_listing_document_requirements' && projection.includes('assurance_state')) {
+            return { data: null, error: { code: 'PGRST204', message: "Could not find the 'assurance_state' column of 'private_listing_document_requirements' in the schema cache" } }
+          }
           const rows = tables[table] ||= []
           let data = rows.filter(row => filters.every(filter => filter(row)))
           if (action === 'insert' || action === 'upsert') {
@@ -77,6 +81,34 @@ it.each(['signed_mandate', 'signed_disclosure_form', 'signed_fica_declaration'])
   expect(reopened.id).toBe(result.id)
   expect(objects.size).toBe(1)
   expect(tables.private_listing_documents).toHaveLength(1)
+})
+
+it('persists a rates account against a saved manual profile without the legacy capture timestamp', async () => {
+  const form = tables.private_listing_seller_onboarding[0].form_data
+  delete form.sellerProfileCapturedAt
+  form.sellerProfileCaptureSource = 'listing_seller_profile_capture'
+  form.ownershipRouteConfirmed = true
+  tables.private_listing_document_requirements.push({ id: crypto.randomUUID(), private_listing_id: listingId, requirement_key: 'seller_onboarding_submission', status: 'requested', is_required: true })
+  const result = await uploadPrivateListingDocument(listingId, new File(['%PDF-1.4'], 'rates.pdf', { type: 'application/pdf' }), {
+    requirementKey: 'rates_account', documentType: 'rates_account', visibility: 'seller_visible',
+  })
+  const requirement = tables.private_listing_document_requirements.find(row => row.requirement_key === 'rates_account')
+  expect(result.requirement_id).toBe(requirement.id)
+  expect(result.persistence.recordVerified).toBe(true)
+  expect(objects.size).toBe(1)
+  const reloaded = await getPrivateListingDocuments(listingId)
+  expect(reloaded).toHaveLength(1)
+  expect(reloaded[0]).toMatchObject({ id: result.id, requirement_id: requirement.id, document_type: 'rates_account' })
+})
+
+it('a newer missing review column cannot hide the saved requirement or lose the uploaded file', async () => {
+  simulateMissingReviewColumn = true
+  const requirement = { id: crypto.randomUUID(), private_listing_id: listingId, requirement_key: 'rates_account', status: 'requested', is_required: true }
+  tables.private_listing_document_requirements.push(requirement)
+  const result = await uploadPrivateListingDocument(listingId, new File(['%PDF-1.4'], 'rates.pdf', { type: 'application/pdf' }), { requirementKey: 'rates_account', documentType: 'rates_account' })
+  expect(result.requirement_id).toBe(requirement.id)
+  expect((await getPrivateListingDocuments(listingId))[0].id).toBe(result.id)
+  expect(objects.size).toBe(1)
 })
 
 it('does not invent seller requirements before the saved ownership model is captured', async () => {

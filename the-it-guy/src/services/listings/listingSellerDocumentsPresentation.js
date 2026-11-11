@@ -1,3 +1,6 @@
+import { buildSellerDocumentWorkflow, getSellerDocumentSigningRequest, SELLER_DOCUMENT_SELECTION_KEYS } from '../../core/documents/sellerDocumentWorkflow.js'
+import { getSellerPhysicalSigningCopy } from '../../core/documents/sellerPhysicalSigningCopy.js'
+
 const STATUS_PRESENTATION = Object.freeze({
   complete: {
     key: 'complete',
@@ -62,10 +65,27 @@ export function resolveListingSellerDocumentStatus(document = {}) {
   return STATUS_PRESENTATION[resolved] || STATUS_PRESENTATION.not_requested
 }
 
-export function buildListingSellerDocumentsSummary(documents = []) {
+// Counters and badges must use the same signing-version and review rules.
+// A prepared copy or a returned signature does not itself mean approved.
+export function resolveListingSellerDocumentDisplayStatus(document = {}, { signingRequests = [] } = {}) {
+  const base = resolveListingSellerDocumentStatus(document)
+  const copy = getSellerPhysicalSigningCopy(document)
+  const key = copy?.key || copy?.requirementKey || document.key
+  if (!SELLER_DOCUMENT_SELECTION_KEYS[key]) return base
+  const request = copy ? getSellerDocumentSigningRequest(signingRequests, key, copy.versionId) : null
+  const workflow = buildSellerDocumentWorkflow({ item: document, copy, request })
+  const bucket = workflow.state === 'complete' ? 'complete'
+    : workflow.state === 'review' ? 'ready_for_review'
+      : workflow.state === 'retry' ? 'action_required'
+        : ['prepared', 'sending', 'signing'].includes(workflow.state) ? 'awaiting_seller'
+          : 'not_requested'
+  return { ...STATUS_PRESENTATION[bucket], label: workflow.state === 'not_prepared' ? 'Not prepared' : workflow.label }
+}
+
+export function buildListingSellerDocumentsSummary(documents = [], options = {}) {
   const rows = (Array.isArray(documents) ? documents : []).map((document) => ({
     document,
-    status: resolveListingSellerDocumentStatus(document),
+    status: resolveListingSellerDocumentDisplayStatus(document, options),
   }))
   const counts = rows.reduce((summary, row) => {
     summary[row.status.key] += 1
@@ -88,7 +108,10 @@ export function buildListingSellerDocumentsSummary(documents = []) {
   }
 }
 
-export function buildListingSellerDocumentProgress(summary = {}, requirementState = {}) {
+export function buildListingSellerDocumentProgress(summary = {}, requirementState = {}, { loading = false, unavailable = false } = {}) {
+  if (unavailable || loading) return {
+    state: unavailable ? 'unavailable' : 'loading', percent: null, complete: null, total: null, outstanding: null,
+  }
   const provisional = requirementState?.provisional === true
   const total = Number(summary?.total || 0)
   const complete = Number(summary?.complete || 0)
@@ -120,15 +143,15 @@ export function resolveListingSellerDocumentActions(document = {}) {
     documentId,
     canRequest: !document.sharedRequirement && status === 'not_requested' && Boolean(requirementId),
     canRemind: !document.sharedRequirement && ['awaiting_seller', 'action_required'].includes(status) && Boolean(requirementId) && !hasFile,
-    canReview: !document.sharedRequirement && status === 'ready_for_review' && Boolean(documentId),
+    canReview: status === 'ready_for_review' && Boolean(documentId) && (!document.sharedRequirement || linkedDocument?.is_current_evidence === true),
     canUpload: document?.canUpload !== false && document?.can_upload !== false && document?.applicable !== false && !['not_applicable', 'cancelled'].includes(String(document?.status || '').toLowerCase()),
     canOpen,
     uploadLabel: hasFile ? 'Replace' : 'Upload',
   }
 }
 
-export function resolveListingSellerDocumentActivity(document = {}) {
-  const status = resolveListingSellerDocumentStatus(document).key
+export function resolveListingSellerDocumentActivity(document = {}, { displayStatus } = {}) {
+  const status = (displayStatus || resolveListingSellerDocumentStatus(document)).key
   const requirement = document?.original?.requirement || {}
   const linkedDocument = document?.linkedDocument || document?.upload || document?.original?.document || {}
   const requestedAt = firstValidDate(

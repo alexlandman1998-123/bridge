@@ -53,7 +53,7 @@ export default function ListingDocumentActions({ label, children }) {
   }, [open])
 
   return <>
-    <button ref={trigger} type="button" aria-label={`Actions for ${label}`} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#315b7a] transition hover:bg-[#f4f8fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6f9f]">
+    <button ref={trigger} type="button" aria-label={`Actions for ${label}`} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#315b7a] transition hover:bg-[#f4f8fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f6f9f]">
       Actions <ChevronDown size={14} className={open ? 'rotate-180' : ''} />
     </button>
     {open ? createPortal(<div ref={panel} id={id} role="group" aria-label={`${label} actions`} style={position} onClick={event => {

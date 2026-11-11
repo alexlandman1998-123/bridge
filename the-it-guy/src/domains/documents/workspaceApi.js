@@ -17,6 +17,7 @@ import { computeTransactionReadinessSnapshot, notifyAttorneysForBondDocumentsCom
 import { updateReservationFromRequiredDocumentStatusIfNeeded } from './uploadAutomation.js'
 import { fetchTransactionById } from '../transactions/detailReadApi.js'
 import { normalizeCanonicalUploadActorRole, reconcileAttorneyDocumentEvidence } from './uploadWorkflow.js'
+import { reviewDocumentRequirement } from '../../services/documents/documentRequirementCommandService.js'
 
 export async function linkChecklistItemToDocument(itemId, documentId) {
   return linkChecklistItemToDocumentService(itemId, documentId)
@@ -485,6 +486,21 @@ export async function reviewCanonicalDocumentRequirement({
       })().catch(() => console.warn('[document-review] Saved review reporting could not refresh'))
     }
     return saved
+  }
+
+  // Shared uploads may start on a lead/listing before a transaction exists.
+  // Review their current immutable upload through the same revision/receipt
+  // command used by those source workspaces.
+  if (normalizedAction !== 'waive') {
+    const lookup = await client.from('document_requirement_instances')
+      .select('id,context_type,context_id,command_revision,latest_upload_id,satisfied_by_document_id')
+      .eq('id', requirementInstanceId).maybeSingle()
+    if (lookup.error) throw lookup.error
+    if (lookup.data?.latest_upload_id) {
+      return reviewDocumentRequirement(client, { requirement: lookup.data,
+        document: { id: documentId || lookup.data.satisfied_by_document_id || lookup.data.latest_upload_id },
+        action: normalizedAction, reason: reason || notes })
+    }
   }
 
   const rpc = await client.rpc('bridge_review_canonical_requirement', {

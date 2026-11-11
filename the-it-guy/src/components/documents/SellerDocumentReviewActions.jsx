@@ -26,7 +26,10 @@ function SellerDocumentReviewActions({
   const status = String(item?.status || '').trim().toLowerCase()
   const lifecycleStatus = String(item?.lifecycleStatus || item?.lifecycle_status || '').trim().toLowerCase()
   const isMandate = [item?.key, item?.requirementKey, item?.requirement_key, document?.document_type, document?.documentType].includes('signed_mandate')
-  const hasExactRequirement = Boolean(document?.requirement_id || document?.requirementId)
+  const canonicalId = item?.canonicalRequirementInstanceId || item?.canonical_requirement_instance_id
+  const hasExactRequirement = item.sharedRequirement
+    ? Boolean(canonicalId && (document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId) === canonicalId && document?.is_current_evidence === true)
+    : Boolean(document?.requirement_id || document?.requirementId)
   const onlineSigned = signingRequest?.status === 'signed'
   const canReview = Boolean((onlineSigned || documentId && hasExactRequirement && ['uploaded', 'under_review'].includes(status)) && typeof onReview === 'function')
   const requestFields = signingRequest ? { signingRequest } : {}

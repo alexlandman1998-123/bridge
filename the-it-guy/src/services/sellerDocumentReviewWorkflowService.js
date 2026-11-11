@@ -1,5 +1,6 @@
 import { notifyDocumentRequirementContextChanged } from './documents/documentRequirementReadService.js'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient.js'
+import { reviewDocumentRequirement } from './documents/documentRequirementCommandService.js'
 
 const REVIEW_ACTIONS = new Set(['start_review', 'approve', 'reject'])
 const REVIEWABLE_STATUSES = new Set(['uploaded', 'under_review'])
@@ -54,7 +55,16 @@ function workflowError(error, fallback) {
   return new Error(message || fallback)
 }
 
-export async function reviewSellerDocument({ document = {}, action = '', reason = '', client = supabase } = {}) {
+export async function reviewSellerDocument({ item = {}, document = {}, action = '', reason = '', client = supabase, storage = globalThis.localStorage } = {}) {
+  if (item.sharedRequirement) {
+    const requirement = item.original?.requirement || item
+    const requirementId = item.canonicalRequirementInstanceId || item.canonical_requirement_instance_id
+    if (!requirementId || document.canonical_requirement_instance_id !== requirementId || document.is_current_evidence !== true) {
+      throw new Error('Reload the current saved file before reviewing it.')
+    }
+    if (!REVIEW_ACTIONS.has(action) || (action === 'reject' && text(reason).length < 5)) throw new Error('Choose a review action and provide a clear rejection reason.')
+    return reviewDocumentRequirement(requireClient(client), { requirement: { ...requirement, id: requirementId }, document, action, reason, storage })
+  }
   const command = buildSellerDocumentReviewCommand({ document, action, reason })
   if (!command.valid) throw new Error(command.errors[0])
   const result = await requireClient(client).rpc('bridge_review_private_listing_seller_document_p1_8', {

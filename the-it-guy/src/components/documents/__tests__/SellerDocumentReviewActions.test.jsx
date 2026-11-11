@@ -3,6 +3,16 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import SellerDocumentReviewActions from '../SellerDocumentReviewActions.jsx'
 afterEach(cleanup)
+it('reviews the exact current shared file from the row showing awaiting review', () => {
+  const review = vi.fn()
+  const document = { id: 'shared-file', canonical_requirement_instance_id: 'slot', is_current_evidence: true, status: 'under_review' }
+  const item = { id: 'slot', key: 'rates_account', sharedRequirement: true, canonicalRequirementInstanceId: 'slot', status: 'under_review', linkedDocument: document }
+  const view = render(<SellerDocumentReviewActions item={item} onReview={review} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Approve', exact: true }))
+  expect(review).toHaveBeenCalledWith(expect.objectContaining({ item, document, action: 'approve' }))
+  view.rerender(<SellerDocumentReviewActions item={{ ...item, linkedDocument: { ...document, is_current_evidence: false } }} onReview={review} />)
+  expect(screen.queryByRole('button', { name: 'Approve', exact: true })).toBeNull()
+})
 it('an inferred display match cannot approve an unlinked file', () => {
   const review = vi.fn()
   render(<SellerDocumentReviewActions item={{ id:'inferred-requirement',key:'id_document',status:'uploaded',linkedDocument:{id:'file',status:'uploaded'} }} onReview={review} />)

@@ -106,6 +106,62 @@ await db.exec(assurance.slice(assurance.indexOf('create or replace function publ
 
 await db.exec(await sql('20261109085345_document_evidence_withdrawal_and_replacement'))
 await db.exec(await sql('20261109085345_document_evidence_withdrawal_and_replacement'))
+await db.exec(await sql('20261111142729_document_workflow_review_and_capture_alignment'))
+await db.exec(await sql('20261111142729_document_workflow_review_and_capture_alignment'))
+
+test('listing upload survives reload, review, rejection and replacement before handover and keeps review history', async () => {
+  let r = (await command({ type: 'private_listing', context: listing, payload: { party: 'seller', label: 'Rates statement flow test' } })).requirement
+  const first = await upload(r)
+  r = first.result.requirement
+  let reloaded = await snapshot('private_listing', listing)
+  assert.equal(reloaded.documents.find(d => d.id === first.result.uploadId).is_current_evidence, true)
+  const review = (requirement, decision, documentId, reason = '', id = randomUUID()) => change(requirement, 'review', { decision, documentId, reason }, { id, type: 'private_listing', context: listing })
+  const start = await review(r, 'start_review', first.result.uploadId)
+  r = start.requirement
+  const rejectionId = randomUUID()
+  const rejected = await review(r, 'reject', first.result.uploadId, 'Please supply the latest statement.', rejectionId)
+  assert.equal(rejected.requirement.status, 'rejected')
+  const retried = await review(r, 'reject', first.result.uploadId, 'Please supply the latest statement.', rejectionId)
+  assert.deepEqual(retried, rejected)
+  r = rejected.requirement
+  const replacement = await upload(r)
+  r = replacement.result.requirement
+  await assert.rejects(review(r, 'approve', first.result.uploadId), /current file changed/)
+  await assert.rejects(review(rejected.requirement, 'approve', replacement.result.uploadId), /changed/)
+  await assert.rejects(review(r, 'reject', replacement.result.uploadId, 'bad'), /clear rejection reason/)
+  const approved = await review(r, 'approve', replacement.result.uploadId)
+  assert.equal(approved.requirement.status, 'approved')
+  reloaded = await snapshot('private_listing', listing)
+  assert.equal(reloaded.requirements.find(q => q.id === r.id).status, 'approved')
+  assert.equal(reloaded.documents.find(d => d.id === first.result.uploadId).is_current_evidence, false)
+  assert.equal(reloaded.documents.find(d => d.id === replacement.result.uploadId).is_current_evidence, true)
+  const history = (await db.query('select document_id,review_status from document_requirement_reviews where requirement_instance_id=$1 order by created_at', [r.id])).rows
+  assert.deepEqual(history.map(x => x.review_status), ['pending', 'needs_reupload', 'approved'])
+  assert.equal(history[2].document_id, replacement.result.uploadId)
+  await db.query('select bridge_handoff_manual_document_requirements($1)', [transaction])
+  const matter = await snapshot()
+  assert.equal(matter.requirements.find(q => q.id === r.id).status, 'approved')
+  assert.equal(matter.documents.find(d => d.id === replacement.result.uploadId).is_current_evidence, true)
+})
+
+test('review requires context access and the assigned reviewer, and never accepts another slot file', async () => {
+  let r = (await command()).requirement
+  r = (await upload(r)).result.requirement
+  const decide = () => change(r, 'review', { decision: 'approve', documentId: r.latest_upload_id, reason: '' })
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)", [stranger])
+  await assert.rejects(decide(), /Not authorised/)
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)", [actor])
+  await db.query("update document_requirement_instances set reviewer_role='developer' where id=$1", [r.id])
+  r = await row(r.id)
+  await assert.rejects(decide(), /assigned reviewer/)
+  await db.query("update document_requirement_instances set reviewer_role='bond_attorney' where id=$1", [r.id])
+  r = await row(r.id)
+  await assert.rejects(decide(), /assigned legal team/)
+  await db.query("update document_requirement_instances set reviewer_role='agent' where id=$1", [r.id])
+  r = await row(r.id)
+  await assert.rejects(change(r, 'review', { decision: 'approve', documentId: randomUUID(), reason: '' }), /current file changed/)
+  assert.equal((await row(r.id)).status, 'under_review')
+})
 
 async function snapshot(type = 'transaction', context = transaction) {
   await db.exec('set role authenticated')

@@ -8798,7 +8798,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
 
   // Resolve before Storage so a missing or unreadable checklist leaves no file behind.
   report('matching', '', { fileName: file.name })
-  let requirements = await withDocumentUploadDeadline(() => getPrivateListingDocumentRequirements(normalizedListingId))
+  let requirements = await withDocumentUploadDeadline(() => getPrivateListingDocumentRequirements(normalizedListingId, { requireAvailable: true }))
   const normalizedRequirementId = normalizeUuid(requirementId)
   const normalizedRequirementKey = normalizeCompatibilityKey(requirementKey || documentType || documentCategory)
   const uploadPreparation = buildPrivateListingDocumentUploadPreparation(accessibleListing, requirements, normalizedRequirementKey)

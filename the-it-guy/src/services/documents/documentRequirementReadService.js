@@ -16,7 +16,8 @@ export const activeRequirement = row => row.applicability_override !== 'removed'
 
 export function requirementDisplayRow(requirement, documents = []) {
   const key = documentRequirementTypeKey(requirement)
-  const evidence = documents.find(row => requirementLinkId(row) === requirement.id && row.is_current_evidence === true) || null
+  const saved = documents.find(row => requirementLinkId(row) === requirement.id && row.is_current_evidence === true) || null
+  const evidence = saved ? { ...saved, status: requirement.status, requirement_status: requirement.status } : null
   const label = documentRequirementLabel(requirement, requirement.document_definitions || {})
   const complete = ['approved', 'completed', 'waived'].includes(requirement.status)
   const pack = requirement.pack_key || ''
@@ -38,6 +39,7 @@ export function requirementDisplayRow(requirement, documents = []) {
     description: requirement.document_definitions?.description || '',
     isUploaded: Boolean(evidence), hasUpload: Boolean(evidence),
     uploadedDocumentId: evidence?.id || null, uploadedDocument: evidence,
+    linkedDocument: evidence,
     storageBucket: evidence?.file_bucket || 'documents', storagePath: evidence?.file_path || '',
     uploadedFileName: evidence?.file_name || evidence?.name || '',
     canDownload: Boolean(evidence),
@@ -81,7 +83,9 @@ export function mergeDocumentEvidence(legacyRows = [], snapshot, { includeHistor
     // lead/workspace lists must not resurrect withdrawn or replaced evidence.
     if (!includeHistory && (row.is_current_evidence === false || row.applicability_override === 'removed')) continue
     const identity = row.id || `${row.file_bucket || 'documents'}:${row.file_path}`
-    byPath.set(identity, row)
+    const requirement = snapshot.requirements.find(item => item.id === requirementLinkId(row))
+    byPath.set(identity, requirement && row.is_current_evidence === true
+      ? { ...row, status: requirement.status, requirement_status: requirement.status } : row)
   }
   return [...byPath.values()]
 }

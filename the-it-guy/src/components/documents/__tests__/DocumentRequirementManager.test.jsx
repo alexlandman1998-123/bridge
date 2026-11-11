@@ -26,6 +26,23 @@ beforeEach(() => {
   uploadDocumentRequirementFile.mockResolvedValue(saved)
 })
 afterEach(cleanup)
+test('a saved shared upload can be opened and reviewed in the same manager after reload', async () => {
+  const current = { ...row, status: 'under_review', latest_upload_id: 'saved-file', reviewer_role: 'agent' }
+  const evidence = { id: 'saved-file', canonical_requirement_instance_id: row.id, is_current_evidence: true, file_path: 'saved.pdf', file_bucket: 'documents', file_name: 'Rates.pdf' }
+  readDocumentRequirementContext.mockResolvedValue({ requirements: [current], documents: [evidence] })
+  executeDocumentRequirementCommand.mockImplementation(async (_client, command) => {
+    expect(command).toMatchObject({ action: 'review', requirementId: row.id, expectedRevision: 7, payload: { decision: 'approve', documentId: evidence.id, reason: '' } })
+    const approved = { ...current, status: 'approved', command_revision: 8 }
+    readDocumentRequirementContext.mockResolvedValue({ requirements: [approved], documents: [evidence] })
+    return { saved: true, commandId: command.commandId, requirement: approved, uploadId: evidence.id }
+  })
+  render(<DocumentRequirementManager {...props} presentation="dialog" open initialSelectedRequirementId={row.id} />)
+  expect(await screen.findByRole('button', { name: 'View saved file' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Approve', exact: true }))
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Approve', exact: true })).toBeNull())
+  expect(executeDocumentRequirementCommand).toHaveBeenCalledTimes(1)
+  expect(localStorage.getItem(key)).toBeNull()
+})
 async function open() {
   render(<DocumentRequirementManager {...props} />)
   fireEvent.click(screen.getByText('Manage document requirements'))

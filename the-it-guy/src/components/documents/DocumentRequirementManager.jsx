@@ -8,6 +8,7 @@ import { clearRequirementCommand, readRequirementCommand, requirementAddContext,
 import { documentRequirementLabel, documentRequirementParty } from '../../core/documents/documentRequirementIdentity.js'
 import { isDefiniteUploadSaveRejection } from '../../lib/documentUploadRecovery.js'
 import { DOCUMENT_UPLOAD_ACCEPT, DOCUMENT_UPLOAD_HELP_TEXT } from '../../lib/documentUploadPolicy.js'
+import SellerDocumentReviewActions from './SellerDocumentReviewActions.jsx'
 
 import { loadDocumentTypeSuggestions, matchDocumentTypes } from '../../services/documents/documentTypeSuggestionService.js'
 
@@ -146,7 +147,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
   const duplicates = validChoice ? findDuplicateRequirements(rows, addContext, addPayload, chosenType?.display_label) : []
   const disabled = busy || !snapshot || !actorId || Boolean(pending)
 
-  async function save(action, retry = false, intent = 'request') {
+  async function save(action, retry = false, intent = 'request', review = null) {
     if (lock.current) return
     lock.current = true
     readGeneration.current += 1
@@ -181,6 +182,8 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
             if (!file) throw new Error('Choose a file first.')
             setUploadProgress(createDocumentUploadProgress('preparing', '', { fileName: file.name }))
             command = await withDocumentUploadDeadline(() => prepareDocumentRequirementUpload(file, { ...command, actorId, replacesUploadId: selected.latest_upload_id || null }))
+          } else if (action === 'review') {
+            command.payload = { decision: review.action, reason: review.reason || '', documentId: selected.satisfied_by_document_id || selected.latest_upload_id }
           } else {
             const changeReason = removalMode && action === 'remove' ? 'Not relevant to this matter' : reason.trim()
             if (!changeReason) throw new Error('Enter a reason for this change.')
@@ -214,6 +217,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
       setNotice(command.action === 'upload' ? 'Uploaded. Linked views are updating.' : 'Document change saved. Linked workspaces will refresh. Existing files and review history are retained.')
       void refreshRef.current?.()
       if (removalMode && command.action === 'remove') onClose?.()
+      return true
     } catch (failure) {
       if (command?.action === 'upload' && alive.current && accountAtStart === accountRevision.current) setUploadProgress(createDocumentUploadProgress('failed', failure.message, { fileName: command.payload?.fileName }))
       if (command && key && isDefiniteUploadSaveRejection(failure)) {
@@ -221,6 +225,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
         if (alive.current && accountAtStart === accountRevision.current) { setPending(null); await refreshRef.current?.() }
       }
       if (alive.current && accountAtStart === accountRevision.current) setError(failure.code === '40001' ? 'This requirement changed while you were working. Review the refreshed details and try again.' : failure.message || 'The document change could not be confirmed. Retry the unfinished change.')
+      return false
     } finally {
       lock.current = false
       if (alive.current) setBusy(false)
@@ -286,6 +291,8 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
     </div>
 
   function existingForm() {
+    const currentId = selected?.satisfied_by_document_id || selected?.latest_upload_id
+    const evidence = snapshot?.documents?.find(row => row.id === currentId && row.canonical_requirement_instance_id === selected?.id && row.is_current_evidence === true)
     return <div ref={existingControls} tabIndex={-1} aria-label="Manage existing requirement" className="space-y-3 border-t border-slate-200 pt-4">
         <label className="block text-sm font-medium">Existing requirement<select value={selectedId} onChange={event => { setSelectedId(event.target.value); setFile(null); setReason('') }} disabled={disabled} className={inputClass}>
           <option value="">Choose a requirement</option>
@@ -296,6 +303,19 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
           {selected.request_delivery ? <p className="text-sm text-slate-600">Request email: {selected.request_delivery.providerAccepted ? 'Accepted by email provider' : selected.request_delivery.status.replaceAll('_', ' ')}{selected.request_delivery.lastError ? ` · ${selected.request_delivery.lastError}` : ''}</p> : null}
           {removed && selected.override_reason ? <p className="text-sm text-slate-600">Removal reason: {selected.override_reason}</p> : null}
           {!removed && selected.status !== 'not_applicable' ? <>
+            {evidence ? <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium">{evidence.file_name || evidence.name || 'Saved document'}</p>
+              <button type="button" disabled={disabled} className={buttonClass} onClick={async () => {
+                try {
+                  const result = await client.storage.from(evidence.file_bucket || 'documents').createSignedUrl(evidence.file_path, 300)
+                  if (result.error || !result.data?.signedUrl) throw result.error || new Error('The saved file could not be opened.')
+                  window.open(result.data.signedUrl, '_blank', 'noopener,noreferrer')
+                } catch (failure) { setError(failure.message || 'The saved file could not be opened.') }
+              }}>View saved file</button>
+              <SellerDocumentReviewActions item={{ ...selected, key: selected.id, label: labelOf(selected), sharedRequirement: true, canonicalRequirementInstanceId: selected.id, linkedDocument: evidence }}
+                busyAction={busy ? 'saving' : ''} onReview={review => save('review', false, 'request', review)}
+                requireSignedEvidenceCheck={/signed|mandate|fica_declaration|disclosure/.test(selected.document_definition_key || '')} />
+            </div> : ['uploaded', 'under_review'].includes(selected.status) ? <p role="status" className="text-sm text-amber-800">The current saved file is unavailable. Refresh or restore access before reviewing it.</p> : null}
             <label className="block text-sm">{selected.latest_upload_id || selected.satisfied_by_document_id ? 'Replacement file' : 'Upload file'}<input key={selected.id} ref={fileInput} type="file" accept={DOCUMENT_UPLOAD_ACCEPT} disabled={disabled} onChange={event => setFile(event.target.files?.[0] || null)} className={inputClass} /></label>
             <p className="text-xs text-slate-500">{DOCUMENT_UPLOAD_HELP_TEXT}</p>
             <button type="button" disabled={disabled || !file} className={buttonClass} onClick={() => void save('upload')}>{selected.latest_upload_id || selected.satisfied_by_document_id ? 'Replace file' : 'Upload file'}</button>

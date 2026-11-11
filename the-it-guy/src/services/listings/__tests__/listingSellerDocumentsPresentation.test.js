@@ -4,6 +4,7 @@ import {
   buildListingSellerDocumentProgress,
   buildListingSellerDocumentsSummary,
   resolveListingSellerDocumentActivity,
+  resolveListingSellerDocumentDisplayStatus,
   resolveListingSellerDocumentActions,
   resolveListingSellerDocumentStatus,
 } from '../listingSellerDocumentsPresentation.js'
@@ -15,6 +16,31 @@ test('normalizes document workflow states to the five listing statuses', () => {
   assert.equal(resolveListingSellerDocumentStatus({ status: 'under_review', lifecycleStatus: 'under_review' }).label, 'Ready for review')
   assert.equal(resolveListingSellerDocumentStatus({ status: 'required' }).label, 'Not requested')
   assert.equal(resolveListingSellerDocumentStatus({ status: 'rejected' }).label, 'Action required')
+})
+
+test('progress matches signing badges and does not approve a prepared or unreviewed signed copy', () => {
+  const copy = { key:'signed_mandate',source:'seller_onboarding.manual_signing_pack',versionId:'version-2',versionDigest:'fixture',contentDigest:'fixture',generatedHtml:'<article>Signing copy</article>' }
+  const mandate = { key:'signed_mandate',status:'approved',lifecycleStatus:'complete',originalDocument:copy,linkedDocument:{status:'approved',version_id:'version-1'} }
+  for (const [status,expectedBucket] of [['sent','awaiting_seller'],['signed','ready_for_review'],['reviewed','complete']]) {
+    const options = { signingRequests:[{document_key:'signed_mandate',version_id:'version-2',status}] }
+    const badge = resolveListingSellerDocumentDisplayStatus(mandate,options)
+    const summary = buildListingSellerDocumentsSummary([mandate],options)
+    assert.equal(badge.key,expectedBucket)
+    assert.equal(summary.complete,status==='reviewed'?1:0)
+    assert.equal(summary.readyForReview,status==='signed'?1:0)
+    assert.equal(buildListingSellerDocumentProgress(summary).percent,status==='reviewed'?100:0)
+    assert.equal(resolveListingSellerDocumentActivity(mandate,{displayStatus:badge}).lastEventLabel,status==='reviewed'?'Approved':status==='signed'?'Uploaded':'Requested')
+  }
+  const draft = {key:'signed_disclosure_form',status:'approved',isGeneratedDraft:true,linkedDocument:{isGeneratedDraft:true,artifactStage:'review_draft',generatedHtml:'<article>Draft</article>'}}
+  assert.equal(resolveListingSellerDocumentDisplayStatus(draft).label,'Not prepared')
+  assert.equal(buildListingSellerDocumentsSummary([draft]).complete,0)
+})
+
+test('loading and failed checklist reads cannot masquerade as a real document count', () => {
+  const summary = buildListingSellerDocumentsSummary([{status:'approved'}])
+  for (const [options,state] of [[{loading:true},'loading'],[{unavailable:true},'unavailable'],[{loading:true,unavailable:true},'unavailable']]) {
+    assert.deepEqual(buildListingSellerDocumentProgress(summary,{},options),{state,percent:null,complete:null,total:null,outstanding:null})
+  }
 })
 
 test('identifies the next actor and latest meaningful event', () => {
