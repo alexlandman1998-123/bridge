@@ -1,6 +1,6 @@
 import { isSellerDocumentPreparationArtifact } from './sellerBasePackContract.js'
 
-const SATISFIED_STATUSES = new Set(['approved', 'completed', 'verified', 'signed'])
+const SATISFIED_STATUSES = new Set(['approved', 'completed', 'verified', 'signed', 'waived'])
 const RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'reviewed', 'received', 'submitted', 'awaiting_agent_review', 'ready_to_send', 'sent_for_signature', 'awaiting_remaining_signatures'])
 const ACTION_STATUSES = new Set(['required', 'requested', 'missing', 'rejected', 'expired', 'awaiting_signed_hard_copy', 'correction_requested'])
 const EXCLUDED_STATUSES = new Set(['cancelled', 'not_applicable', 'not_required'])
@@ -30,6 +30,8 @@ export function normalizeSellerDocumentExperienceStatus(value = '') {
   if (normalized === 'accepted') return 'approved'
   if (normalized === 'complete') return 'completed'
   if (normalized === 'reviewed') return 'under_review'
+  if (normalized === 'pending_review') return 'under_review'
+  if (['reupload_required', 'needs_replacement'].includes(normalized)) return 'rejected'
   if (normalized === 'received' || normalized === 'submitted') return 'uploaded'
   if (normalized === 'missing') return 'required'
   return normalized
@@ -123,6 +125,7 @@ function statusLabel(status = '') {
     completed: 'Complete',
     verified: 'Complete',
     signed: 'Complete',
+    waived: 'Waived',
     awaiting_agent_review: 'Ready for review',
     ready_to_send: 'Ready for review',
     sent_for_signature: 'Awaiting seller',

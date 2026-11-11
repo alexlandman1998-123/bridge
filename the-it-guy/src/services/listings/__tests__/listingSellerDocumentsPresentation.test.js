@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { buildSellerDocumentExperienceModel } from '../../../lib/sellerDocumentExperienceModel.js'
 import test from 'node:test'
 import {
   buildListingSellerDocumentProgress,
@@ -129,4 +130,14 @@ test('shared requirement readers expose downloads without routing canonical IDs 
   assert.equal(actions.canReview, false)
   assert.equal(actions.canUpload, false)
   assert.equal(actions.canOpen, true)
+})
+test('shared waived requirements are complete and pending-review file aliases remain reviewable', () => {
+  const model = buildSellerDocumentExperienceModel({ requirements: [
+    { id: 'waived', key: 'rates_account', status: 'waived', sharedRequirement: true },
+    { id: 'received', key: 'levy_statement', status: 'pending_review' },
+    { id: 'replacement', key: 'proof_of_address', status: 'needs_replacement' },
+  ] })
+  assert.equal(model.items.find(row => row.id === 'waived').complete, true)
+  assert.equal(model.items.find(row => row.id === 'received').status, 'under_review')
+  assert.equal(model.items.find(row => row.id === 'replacement').status, 'rejected')
 })

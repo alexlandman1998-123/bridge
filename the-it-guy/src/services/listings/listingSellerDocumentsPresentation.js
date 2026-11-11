@@ -51,7 +51,7 @@ export function resolveListingSellerDocumentStatus(document = {}) {
   const status = normalize(document?.status)
   const lifecycleStatus = lifecycle === 'under_review' ? 'ready_for_review' : lifecycle
   const resolved = STATUS_PRESENTATION[lifecycleStatus] ? lifecycleStatus : (
-    ['approved', 'completed', 'verified', 'signed'].includes(status)
+    ['approved', 'completed', 'verified', 'signed', 'waived'].includes(status)
       ? 'complete'
       : ['requested', 'sent_for_signature', 'awaiting_remaining_signatures', 'awaiting_signed_hard_copy'].includes(status)
         ? 'awaiting_seller'
@@ -69,6 +69,7 @@ export function resolveListingSellerDocumentStatus(document = {}) {
 // A prepared copy or a returned signature does not itself mean approved.
 export function resolveListingSellerDocumentDisplayStatus(document = {}, { signingRequests = [] } = {}) {
   const base = resolveListingSellerDocumentStatus(document)
+  if (normalize(document.status) === 'waived') return { ...STATUS_PRESENTATION.complete, label: 'Waived' }
   const copy = getSellerPhysicalSigningCopy(document)
   const key = copy?.key || copy?.requirementKey || document.key
   if (!SELLER_DOCUMENT_SELECTION_KEYS[key]) return base
