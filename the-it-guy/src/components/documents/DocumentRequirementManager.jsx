@@ -109,7 +109,9 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
     void refresh()
     const stop = watchDocumentRequirementContext(() => lock.current ? undefined : refresh())
     const subscription = client.auth.onAuthStateChange?.((_event, session) => {
-      if (currentActor.current !== (session?.user?.id || '')) {
+      // INITIAL_SESSION may arrive before getUser resolves. It establishes the
+      // first identity; it must not erase the checklist row chosen by the user.
+      if (currentActor.current && currentActor.current !== (session?.user?.id || '')) {
         accountRevision.current += 1
         readGeneration.current += 1
         currentActor.current = session?.user?.id || ''
@@ -125,6 +127,7 @@ function RequirementControls({ client, contextType, contextId, party: fixedParty
         setUploadProgress(null)
         setNotice('')
       }
+      currentActor.current = session?.user?.id || ''
       setTimeout(() => { if (!cancelled && !lock.current) void refresh() }, 0)
     })
     return () => { cancelled = true; alive.current = false; stop(); subscription?.data?.subscription?.unsubscribe() }

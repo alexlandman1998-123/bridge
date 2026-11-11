@@ -64,6 +64,19 @@ test('a checklist row opens its existing request directly and uploads without cr
   expect(executeDocumentRequirementCommand).not.toHaveBeenCalled()
 })
 
+test('the real initial auth event cannot erase a preselected upload route', async () => {
+  client.auth.onAuthStateChange = vi.fn(callback => {
+    callback('INITIAL_SESSION', { user: { id: 'actor' } })
+    return { data: { subscription: { unsubscribe() {} } } }
+  })
+  try {
+    render(<DocumentRequirementManager {...props} presentation="dialog" open initialSelectedRequirementId={row.id} />)
+    expect(await screen.findByLabelText('Upload file')).toBeTruthy()
+    expect(screen.getByLabelText('Existing requirement').value).toBe(row.id)
+    expect(screen.queryByLabelText('New document name')).toBeNull()
+  } finally { delete client.auth.onAuthStateChange }
+})
+
 test('adds a named seller requirement to the handed-over transaction and clears confirmed recovery', async () => {
   await open()
   fireEvent.change(screen.getByLabelText('New document name'), { target: { value: 'SARS correspondence' } })

@@ -163,6 +163,23 @@ test('review requires context access and the assigned reviewer, and never accept
   assert.equal((await row(r.id)).status, 'under_review')
 })
 
+test('seller-lead uploads are reviewable from the linked listing without a legacy listing file row', async () => {
+  const sellerLead = randomUUID(), sourceListing = randomUUID()
+  await db.query("insert into leads values ($1,$2,'seller')", [sellerLead, org])
+  await db.query('insert into private_listings values ($1,$2,$3,null)', [sourceListing, org, sellerLead])
+  let r = (await command({ type: 'seller_lead', context: sellerLead, payload: { party: 'seller', label: 'Municipal account' } })).requirement
+  r = (await upload(r)).result.requirement
+  const before = await snapshot('private_listing', sourceListing)
+  assert.equal(before.documents.find(d => d.id === r.latest_upload_id).is_current_evidence, true)
+  assert.equal(before.requirements.find(q => q.id === r.id).context_type, 'seller_lead')
+  const visible = before.requirements.find(q => q.id === r.id)
+  const approved = await change(r, 'review', { decision: 'approve', documentId: r.latest_upload_id, reason: '' }, { type: visible.context_type, context: visible.context_id })
+  assert.equal(approved.requirement.status, 'approved')
+  assert.equal((await snapshot('seller_lead', sellerLead)).requirements.find(q => q.id === r.id).status, 'approved')
+  assert.equal((await snapshot('private_listing', sourceListing)).requirements.find(q => q.id === r.id).status, 'approved')
+  assert.equal((await db.query('select count(*) from private_listing_documents where canonical_requirement_instance_id=$1', [r.id])).rows[0].count, 0)
+})
+
 async function snapshot(type = 'transaction', context = transaction) {
   await db.exec('set role authenticated')
   try { return (await db.query('select bridge_document_requirement_context($1,$2) result', [type, context])).rows[0].result }
