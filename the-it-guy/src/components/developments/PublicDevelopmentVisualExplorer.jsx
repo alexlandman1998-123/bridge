@@ -15,7 +15,9 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import "./public-development-mobile-map.css";
 import {
   auditDevelopmentVisualMap,
   getPublishedVisualMap,
@@ -51,6 +53,31 @@ import {
 
 import PublicDevelopmentUnitDialog from "./PublicDevelopmentUnitDialog.jsx";
 import { getResidentialPlanViewport } from "../../core/developments/developmentResidentialViewport.js";
+
+// A native modal escapes transformed page sections, traps focus and makes the
+// page inert. Lock the root so nested residence dialogs can manage body scroll.
+function MobileEstateMapDialog({ children, onClose, onCancel }) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    const element = dialog.current;
+    const root = document.documentElement;
+    const overflow = root.style.overflow;
+    const opener = document.activeElement;
+    const back = () => onClose();
+    window.addEventListener("popstate", back);
+    element.showModal();
+    root.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("popstate", back);
+      element.close();
+      root.style.overflow = overflow;
+      if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+    };
+  }, [onClose]);
+  return createPortal(<dialog ref={dialog} className="estate-map-dialog" aria-label="Explore residences" onCancel={event => { event.preventDefault(); onCancel(); }}>{children}</dialog>, document.body);
+}
+
+const NO_FAILED_SCENES = Object.freeze([]);
 
 const STATUS = {
   available: {
@@ -298,12 +325,13 @@ export default function PublicDevelopmentVisualExplorer({
   previewVisualMap = null,
   visualMapOverride = null,
   initialSceneId = "",
-  simulatedFailedSceneIds = [],
+  simulatedFailedSceneIds = NO_FAILED_SCENES,
   embedded = false,
   initialResidentialFocus = false,
   estatePresentation = false,
   onReserveUnit,
 }) {
+  const mobileEstate = mobile && estatePresentation;
   const visualMap = useMemo(
     () =>
       visualMapOverride
@@ -333,9 +361,17 @@ export default function PublicDevelopmentVisualExplorer({
   const [hoveredId, setHoveredId] = useState("");
   const [view, setView] = useState("map");
   const [layout, setLayout] = useState("list");
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(() => mobile && estatePresentation && typeof window !== "undefined" && Boolean(new URLSearchParams(window.location.search).get("unit")));
+  const [unitDetailsOpen, setUnitDetailsOpen] = useState(false);
+  const mapHistory = useRef(null);
+  const closeMobileMap = useCallback(() => {
+    if (mapHistory.current && window.history.state?.estateMap === mapHistory.current) window.history.back();
+    mapHistory.current = null;
+    setFullscreen(false); setFilterOpen(false); setUnitDetailsOpen(false); setSelectedId("");
+  }, []);
   const [homesFocused, setHomesFocused] = useState(true);
   const [planPaneWidth, setPlanPaneWidth] = useState(0);
+  const [planPaneHeight, setPlanPaneHeight] = useState(0);
   const planPaneRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -357,6 +393,7 @@ export default function PublicDevelopmentVisualExplorer({
   const [sceneHistory, setSceneHistory] = useState([]);
   const [showFirstUseHint, setShowFirstUseHint] = useState(false);
   const drag = useRef(null);
+  const draggedMap = useRef(false);
   const touchPoints = useRef(new Map());
   const emittedSceneStates = useRef(new Set());
   const cardRefs = useRef(new Map());
@@ -421,10 +458,11 @@ export default function PublicDevelopmentVisualExplorer({
     const observer = new ResizeObserver(([entry]) => {
       const width = entry?.contentRect.width;
       if (width > 0) setPlanPaneWidth(width);
+      if (entry?.contentRect.height > 0) setPlanPaneHeight(entry.contentRect.height);
     });
     observer.observe(planPaneRef.current);
     return () => observer.disconnect();
-  }, [initialResidentialFocus]);
+  }, [initialResidentialFocus, mobileEstate, fullscreen, view, filterOpen]);
   const visibleIds = useMemo(
     () => new Set(units.map((unit) => String(unit.id))),
     [units],
@@ -439,8 +477,10 @@ export default function PublicDevelopmentVisualExplorer({
       ),
     [scene, visibleIds],
   );
-  const setFilter = (key, value) =>
+  const setFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
+    if (mobileEstate) { setSelectedId(""); setUnitDetailsOpen(false); }
+  };
   const clearFilters = () =>
     setFilters({
       query: "",
@@ -476,7 +516,7 @@ export default function PublicDevelopmentVisualExplorer({
       value && value !== "all" ? params.set(key, value) : params.delete(key),
     );
     window.history.replaceState(
-      null,
+      window.history.state,
       "",
       `${window.location.pathname}${params.size ? `?${params}` : ""}${window.location.hash}`,
     );
@@ -631,18 +671,19 @@ export default function PublicDevelopmentVisualExplorer({
   }, [sceneImageStatus, likelyNextScene?.id, likelyNextScene?.background?.url]);
   useEffect(() => {
     const handleKey = (event) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || (mobileEstate && fullscreen)) return;
       if (comparisonOpen) setComparisonOpen(false);
       else if (selectedId) setSelectedId("");
       else if (fullscreen) setFullscreen(false);
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [comparisonOpen, selectedId, fullscreen]);
+  }, [comparisonOpen, selectedId, fullscreen, mobileEstate]);
   const choose = (id) => {
     const unit = inventory.find((item) => String(item.id) === String(id));
     const floorPlan = getVisualUnitFloorPlanFallback(visualMap, unit);
     setSelectedId(String(id));
+    setUnitDetailsOpen(!mobileEstate);
     setSelectedFloorPlan(floorPlan);
     setHoveredId("");
     emitExplorerEvent("unit_opened", {
@@ -807,20 +848,31 @@ export default function PublicDevelopmentVisualExplorer({
   const panelHeight = fullscreen
     ? "calc(100svh - 100px)"
     : fittedPlanHeight ? `min(${basePanelHeight}, ${fittedPlanHeight}px)` : basePanelHeight;
-  const transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+  const maxZoom = mobileEstate ? 4 : 2.5;
+  const mapWidth = mobileEstate && planPaneWidth && planPaneHeight
+    ? (homesFocused ? Math.max(planPaneWidth, planPaneHeight * sceneAspectRatio) : Math.min(planPaneWidth, planPaneHeight * sceneAspectRatio))
+    : planPaneWidth;
+  const clampPan = (value, scale = zoom) => {
+    if (!mobileEstate || !mapWidth) return value;
+    const x = Math.max(0, (mapWidth * scale - planPaneWidth) / 2);
+    const y = Math.max(0, (mapWidth / sceneAspectRatio * scale - planPaneHeight) / 2);
+    return { x: Math.max(-x, Math.min(x, value.x)), y: Math.max(-y, Math.min(y, value.y)) };
+  };
+  const resetMap = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+  const transform = `${mobileEstate ? "translate(-50%, -50%) " : ""}translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
   const canvas = (
     <div
       role="application"
       aria-label={`Interactive ${scene?.name || "development"} plan. Use plus and minus to zoom and drag to pan.`}
       tabIndex={0}
-      className={`relative touch-none overflow-hidden bg-[#d8ded8] select-none ${mobile && !initialResidentialFocus ? "h-full w-full" : "shrink-0"}`}
-      style={mobile && !initialResidentialFocus ? undefined : {
+      className={`relative touch-none overflow-hidden bg-[#d8ded8] select-none ${mobileEstate || (mobile && !initialResidentialFocus) ? "h-full w-full" : "shrink-0"}`}
+      style={mobileEstate || (mobile && !initialResidentialFocus) ? undefined : {
         aspectRatio: sceneAspectRatio,
         width: `min(100%, calc(var(--visual-explorer-height) * ${sceneAspectRatio}))`,
       }}
       onKeyDown={(event) => {
         if (event.key === "+" || event.key === "=")
-          setZoom((value) => Math.min(2.5, value + 0.2));
+          setZoom((value) => Math.min(maxZoom, value + 0.2));
         if (event.key === "-") setZoom((value) => Math.max(1, value - 0.2));
         if (
           ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
@@ -842,8 +894,9 @@ export default function PublicDevelopmentVisualExplorer({
         }
       }}
       onPointerDown={(event) => {
-        if (event.target.closest("button,[data-hotspot]")) return;
-        event.currentTarget.setPointerCapture(event.pointerId);
+        if (mobileEstate ? event.target.closest("button:not([data-hotspot-button])") : event.target.closest("button,[data-hotspot]")) return;
+        draggedMap.current = false;
+        if (!mobileEstate) event.currentTarget.setPointerCapture(event.pointerId);
         touchPoints.current.set(event.pointerId, {
           x: event.clientX,
           y: event.clientY,
@@ -869,13 +922,14 @@ export default function PublicDevelopmentVisualExplorer({
         });
         const points = [...touchPoints.current.values()];
         if (drag.current.kind === "pinch" && points.length > 1) {
+          draggedMap.current = true;
           const distance = Math.hypot(
             points[0].x - points[1].x,
             points[0].y - points[1].y,
           );
           setZoom(
             Math.min(
-              2.5,
+              maxZoom,
               Math.max(
                 1,
                 drag.current.zoom * (distance / drag.current.distance),
@@ -883,11 +937,17 @@ export default function PublicDevelopmentVisualExplorer({
             ),
           );
         } else if (drag.current.kind === "pan") {
-          setPan({
+          if (mobileEstate && Math.hypot(event.clientX - drag.current.x, event.clientY - drag.current.y) < 6) return;
+          draggedMap.current = true;
+          if (mobileEstate) event.currentTarget.setPointerCapture(event.pointerId);
+          setPan(clampPan({
             x: drag.current.pan.x + event.clientX - drag.current.x,
             y: drag.current.pan.y + event.clientY - drag.current.y,
-          });
+          }));
         }
+      }}
+      onClickCapture={event => {
+        if (mobileEstate && draggedMap.current) { event.preventDefault(); event.stopPropagation(); draggedMap.current = false; }
       }}
       onPointerUp={(event) => {
         touchPoints.current.delete(event.pointerId);
@@ -899,8 +959,8 @@ export default function PublicDevelopmentVisualExplorer({
       }}
     >
       <div
-        className="absolute inset-0 origin-center motion-safe:transition-transform motion-safe:duration-200"
-        style={{ transform }}
+        className={`${mobileEstate ? "absolute" : "absolute inset-0"} origin-center ${mobileEstate ? "" : "motion-safe:transition-transform motion-safe:duration-200"}`}
+        style={{ transform, ...(mobileEstate ? { left: "50%", top: "50%", width: mapWidth || "100%", height: mapWidth ? mapWidth / sceneAspectRatio : "100%" } : {}) }}
       >
         <div
           data-residential-plan-layer
@@ -1007,9 +1067,9 @@ export default function PublicDevelopmentVisualExplorer({
                 backgroundColor: unitStatus?.fill,
                 color: unitStatus ? "#10251f" : undefined,
               }}
-              className={`absolute rounded-md border border-white/80 px-2 py-1 text-[10px] font-bold shadow-md outline-none motion-safe:transition motion-safe:hover:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-[#f4d99b]/80 ${String(hotspot.target.id) === String(selectedId) ? "bg-[#062f28] text-white ring-2 ring-[#f4d99b]" : "bg-white/95 text-[#133d32]"}`}
+              className={`absolute ${mobileEstate ? `estate-map-marker ${!homesFocused && zoom < 1.5 ? "estate-map-marker--overview" : ""}` : "rounded-md border border-white/80 px-2 py-1 text-[10px] font-bold shadow-md"} outline-none motion-safe:transition motion-safe:hover:-translate-y-0.5 focus-visible:ring-4 focus-visible:ring-[#f4d99b]/80 ${String(hotspot.target.id) === String(selectedId) ? "bg-[#062f28] text-white ring-2 ring-[#f4d99b]" : "bg-white/95 text-[#133d32]"}`}
             >
-              {hotspot.label?.text || unit?.unitNumber || hotspot.target.id}
+              <span style={mobileEstate && !homesFocused && zoom < 1.5 ? { backgroundColor: unitStatus?.fill } : undefined}>{hotspot.label?.text || unit?.unitNumber || hotspot.target.id}</span>
               {childCount ? ` · ${childCount}` : ""}
             </button>
           );
@@ -1051,7 +1111,7 @@ export default function PublicDevelopmentVisualExplorer({
           </button>
         </div>
       ) : null}
-      <div className="absolute left-4 top-4 flex max-w-[calc(100%-145px)] flex-wrap items-center overflow-hidden rounded-md bg-[#082f28]/90 p-1 text-white shadow-lg backdrop-blur">
+      <div className={`${mobileEstate && !sceneHistory.length ? "hidden" : "absolute left-4 top-4 flex"} max-w-[calc(100%-145px)] flex-wrap items-center overflow-hidden rounded-md bg-[#082f28]/90 p-1 text-white shadow-lg backdrop-blur`}>
         {sceneHistory.length ? (
           <button
             type="button"
@@ -1085,7 +1145,7 @@ export default function PublicDevelopmentVisualExplorer({
           className="motion-safe:transition-transform"
         />
       </div>
-      {hotspots.length ? (
+      {hotspots.length && !mobileEstate ? (
         <div className="pointer-events-none absolute left-1/2 top-16 -translate-x-1/2 rounded-full bg-[#fffdf9]/95 px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[.1em] text-[#174438] shadow-lg backdrop-blur motion-safe:animate-pulse">
           {getVisualScenePrompt(scene, hotspots.length)}
         </div>
@@ -1128,7 +1188,7 @@ export default function PublicDevelopmentVisualExplorer({
           </span>
         </button>
       ) : null}
-      {showFirstUseHint ? (
+      {showFirstUseHint && !mobileEstate ? (
         <div className="absolute inset-x-4 bottom-20 z-20 mx-auto max-w-sm rounded-xl bg-[#082f28] p-4 text-sm text-white shadow-2xl md:bottom-6">
           <strong className="block">Explore the development visually</strong>
           <p className="mt-1 text-xs leading-5 text-white/75">
@@ -1144,10 +1204,10 @@ export default function PublicDevelopmentVisualExplorer({
           </button>
         </div>
       ) : null}
-      <div className="absolute bottom-4 right-4 grid overflow-hidden rounded-lg bg-white shadow-lg">
+      <div className={`${mobileEstate ? "estate-map-zoom" : "absolute bottom-4 right-4"} grid overflow-hidden rounded-lg bg-white shadow-lg`}>
         <button
           aria-label="Zoom in"
-          onClick={() => setZoom((value) => Math.min(2.5, value + 0.2))}
+          onClick={() => setZoom((value) => Math.min(maxZoom, value + 0.2))}
           className="grid h-11 w-11 place-items-center border-b"
         >
           <Plus size={17} />
@@ -1156,6 +1216,7 @@ export default function PublicDevelopmentVisualExplorer({
           aria-label="Zoom out"
           onClick={() => {
             setZoom((value) => Math.max(1, value - 0.2));
+            if (mobileEstate) setPan(clampPan(pan, Math.max(1, zoom - 0.2)));
             if (zoom <= 1.2) setPan({ x: 0, y: 0 });
           }}
           className="grid h-11 w-11 place-items-center"
@@ -1176,6 +1237,7 @@ export default function PublicDevelopmentVisualExplorer({
         <input
           value={filters.query}
           onChange={(event) => setFilter("query", event.target.value)}
+          aria-label="Search unit, block or phase"
           placeholder="Search unit, block or phase"
           className="h-10 w-full rounded-md border border-[#ded9ce] bg-white pl-9 pr-3 text-xs outline-none focus:border-[#aa853b]"
         />
@@ -1229,6 +1291,107 @@ export default function PublicDevelopmentVisualExplorer({
         />
       </label>
     </>
+  );
+
+  const residenceList = (
+          <aside
+            className={`${mobile && view === "map" ? "hidden" : "flex"} h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#e5dfd4] bg-[#f8f6f1]`}
+          >
+            <div className="z-10 flex shrink-0 items-center justify-between border-b bg-[#fffdf9]/95 px-4 py-3 backdrop-blur">
+              <span>
+                <b className="text-lg text-[#143d33]" aria-live="polite">
+                  {units.length}
+                </b>
+                <small className="ml-2 text-[#718078]">{units.length === 1 ? "residence" : "residences"}</small>
+              </span>
+              <button
+                onClick={clearFilters}
+                className="text-xs font-bold text-[#8b6b2e]"
+              >
+                Clear filters
+              </button>
+            </div>
+            <div
+              ref={unitListRef}
+              role="region"
+              aria-label="Residence list"
+              tabIndex={0}
+              className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${layout === "grid" ? "grid auto-rows-max grid-cols-2 content-start gap-2 p-2" : ""}`}
+            >
+              {units.map((unit) => {
+                const status = STATUS[visualUnitStatus(unit.status)];
+                const active = String(unit.id) === String(selectedId);
+                return (
+                  <article
+                    ref={(node) =>
+                      node
+                        ? cardRefs.current.set(String(unit.id), node)
+                        : cardRefs.current.delete(String(unit.id))
+                    }
+                    key={unit.id}
+                    onMouseEnter={() => setHoveredId(String(unit.id))}
+                    onMouseLeave={() => setHoveredId("")}
+                    className={`relative border-b border-[#e8e2d7] bg-white transition ${active ? "ring-2 ring-inset ring-[#bd984d]" : "hover:bg-[#fcfaf5]"} ${layout === "grid" ? "overflow-hidden rounded-lg border" : ""}`}
+                  >
+                    <button
+                      onClick={() => choose(unit.id)}
+                      className={`${layout === "grid" ? "block p-3" : "grid w-full grid-cols-[72px_minmax(0,1fr)_auto] gap-3 p-3"} text-left`}
+                    >
+                      <img
+                        src={unitImage(unit, media)}
+                        alt=""
+                        className={`${layout === "grid" ? "mb-3 h-24 w-full" : "h-16 w-[72px]"} rounded-md object-cover`}
+                      />
+                      <span className="min-w-0">
+                        <b className="block text-sm text-[#153d33]">
+                          {unit.unitNumber}
+                        </b>
+                        <small className="mt-1 block truncate text-[#687a70]">
+                          {unit.unitType || "Residence"}
+                          {unit.sizeSqm ? ` · ${unit.sizeSqm}m²` : ""}
+                        </small>
+                        <span
+                          className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${status.chip}`}
+                        >
+                          {unit.reservationLabel || status.label}
+                        </span>
+                      </span>
+                      <strong className="text-xs text-[#153d33]">
+                        {money(unit.price, true)}
+                      </strong>
+                    </button>
+                    <button
+                      aria-label="Save residence"
+                      onClick={() => toggleShortlist(String(unit.id))}
+                      className={`${layout === "grid" ? "absolute right-3 top-3" : "absolute bottom-3 right-3"} text-[#8a928d]`}
+                    >
+                      <Heart
+                        size={16}
+                        fill={
+                          favourites.has(String(unit.id)) ? "#bd984d" : "none"
+                        }
+                      />
+                    </button>
+                    <button
+                      aria-label="Compare residence"
+                      onClick={() => toggleCompare(String(unit.id))}
+                      className={`${layout === "grid" ? "absolute right-10 top-3" : "absolute bottom-3 right-10"} ${comparison.has(String(unit.id)) ? "text-[#0c5a49]" : "text-[#8a928d]"}`}
+                    >
+                      <GitCompareArrows size={16} />
+                    </button>
+                  </article>
+                );
+              })}
+              {!units.length ? (
+                <div className="grid place-items-center p-10 text-center text-sm text-[#6b7c72]">
+                  <span>
+                    <Layers3 className="mx-auto mb-3" />
+                    No residences match these filters.
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </aside>
   );
 
   const content = (
@@ -1336,104 +1499,8 @@ export default function PublicDevelopmentVisualExplorer({
           >
             {canvas}
           </div>
-          <aside
-            className={`${mobile && view === "map" ? "hidden" : "flex"} h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#e5dfd4] bg-[#f8f6f1]`}
-          >
-            <div className="z-10 flex shrink-0 items-center justify-between border-b bg-[#fffdf9]/95 px-4 py-3 backdrop-blur">
-              <span>
-                <b className="text-lg text-[#143d33]" aria-live="polite">
-                  {units.length}
-                </b>
-                <small className="ml-2 text-[#718078]">residences</small>
-              </span>
-              <button
-                onClick={clearFilters}
-                className="text-xs font-bold text-[#8b6b2e]"
-              >
-                Clear filters
-              </button>
-            </div>
-            <div
-              ref={unitListRef}
-              role="region"
-              aria-label="Residence list"
-              tabIndex={0}
-              className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${layout === "grid" ? "grid auto-rows-max grid-cols-2 content-start gap-2 p-2" : ""}`}
-            >
-              {units.map((unit) => {
-                const status = STATUS[visualUnitStatus(unit.status)];
-                const active = String(unit.id) === String(selectedId);
-                return (
-                  <article
-                    ref={(node) =>
-                      node
-                        ? cardRefs.current.set(String(unit.id), node)
-                        : cardRefs.current.delete(String(unit.id))
-                    }
-                    key={unit.id}
-                    onMouseEnter={() => setHoveredId(String(unit.id))}
-                    onMouseLeave={() => setHoveredId("")}
-                    className={`relative border-b border-[#e8e2d7] bg-white transition ${active ? "ring-2 ring-inset ring-[#bd984d]" : "hover:bg-[#fcfaf5]"} ${layout === "grid" ? "overflow-hidden rounded-lg border" : ""}`}
-                  >
-                    <button
-                      onClick={() => choose(unit.id)}
-                      className={`${layout === "grid" ? "block p-3" : "grid w-full grid-cols-[72px_minmax(0,1fr)_auto] gap-3 p-3"} text-left`}
-                    >
-                      <img
-                        src={unitImage(unit, media)}
-                        alt=""
-                        className={`${layout === "grid" ? "mb-3 h-24 w-full" : "h-16 w-[72px]"} rounded-md object-cover`}
-                      />
-                      <span className="min-w-0">
-                        <b className="block text-sm text-[#153d33]">
-                          {unit.unitNumber}
-                        </b>
-                        <small className="mt-1 block truncate text-[#687a70]">
-                          {unit.unitType || "Residence"}
-                          {unit.sizeSqm ? ` · ${unit.sizeSqm}m²` : ""}
-                        </small>
-                        <span
-                          className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${status.chip}`}
-                        >
-                          {unit.reservationLabel || status.label}
-                        </span>
-                      </span>
-                      <strong className="text-xs text-[#153d33]">
-                        {money(unit.price, true)}
-                      </strong>
-                    </button>
-                    <button
-                      aria-label="Save residence"
-                      onClick={() => toggleShortlist(String(unit.id))}
-                      className={`${layout === "grid" ? "absolute right-3 top-3" : "absolute bottom-3 right-3"} text-[#8a928d]`}
-                    >
-                      <Heart
-                        size={16}
-                        fill={
-                          favourites.has(String(unit.id)) ? "#bd984d" : "none"
-                        }
-                      />
-                    </button>
-                    <button
-                      aria-label="Compare residence"
-                      onClick={() => toggleCompare(String(unit.id))}
-                      className={`${layout === "grid" ? "absolute right-10 top-3" : "absolute bottom-3 right-10"} ${comparison.has(String(unit.id)) ? "text-[#0c5a49]" : "text-[#8a928d]"}`}
-                    >
-                      <GitCompareArrows size={16} />
-                    </button>
-                  </article>
-                );
-              })}
-              {!units.length ? (
-                <div className="grid place-items-center p-10 text-center text-sm text-[#6b7c72]">
-                  <span>
-                    <Layers3 className="mx-auto mb-3" />
-                    No residences match these filters.
-                  </span>
-                </div>
-              ) : null}
-            </div>
-          </aside>
+          {residenceList}
+
         </div>
         {mobile ? (
           <div className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 rounded-xl bg-white p-1 shadow-xl">
@@ -1454,6 +1521,44 @@ export default function PublicDevelopmentVisualExplorer({
       </div>
     </div>
   );
+
+
+  const openMobileMap = () => {
+    const key = `estate-map-${Date.now()}-${Math.random()}`;
+    window.history.pushState({ ...window.history.state, estateMap: key }, "", window.location.href);
+    mapHistory.current = key;
+    resetMap(); setView("map"); setFullscreen(true);
+  };
+  const mobileContent = <>
+    <button type="button" className="estate-map-preview" aria-label="Explore units on the full-screen estate map" onClick={openMobileMap}>
+      <span className="estate-map-preview__image" style={{ aspectRatio: sceneAspectRatio }} aria-hidden="true">
+        <span style={{ ...sceneBackgroundStyle(scene, media.sitePlanUrl), position: "absolute", ...(activeFocus ? { left: `${-activeFocus.x / activeFocus.width * 100}%`, top: `${-activeFocus.y / activeFocus.height * 100}%`, width: `${10000 / activeFocus.width}%`, height: `${10000 / activeFocus.height}%` } : { inset: 0 }) }} />
+        <span className="estate-map-preview__badge"><Expand size={16} /> Interactive estate map</span>
+      </span>
+      <span className="estate-map-preview__footer"><span><strong>Explore units</strong><small>{inventory.length} homes · Tap to open the full-screen map</small></span><Expand size={22} /></span>
+    </button>
+    {fullscreen ? <MobileEstateMapDialog onClose={closeMobileMap} onCancel={() => { if (filterOpen) setFilterOpen(false); else if (selectedId) setSelectedId(""); else closeMobileMap(); }}>
+      <div className="estate-map-shell">
+        <header className="estate-map-header"><div><h2>Explore residences</h2><p aria-live="polite">{units.length} {units.length === 1 ? "home" : "homes"}{units.length !== inventory.length ? ` of ${inventory.length}` : ""}</p></div><button type="button" aria-label="Close estate map" onClick={closeMobileMap}><X size={22} /></button></header>
+        <div className="estate-map-controls" hidden={filterOpen}>
+          <div className="estate-map-switch" aria-label="Browse residences"><button type="button" aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button><button type="button" aria-pressed={view === "residences"} onClick={() => setView("residences")}>List</button></div>
+          <button type="button" className="estate-map-filter-button" onClick={() => setFilterOpen(true)}><SlidersHorizontal size={17} /> Filters{Object.values(filters).some(value => value && value !== "all") ? <span aria-label="Filters applied">•</span> : null}</button>
+          <label className="estate-map-search"><Search size={17} /><input aria-label="Search units" value={filters.query} placeholder="Find a unit number" onChange={event => setFilter("query", event.target.value)} /></label>
+        </div>
+        <main className="estate-map-main" hidden={filterOpen}>
+          <div className="estate-map-view" hidden={view !== "map"}>
+            <div className="estate-map-map-actions"><button type="button" aria-pressed={!homesFocused} onClick={() => { setHomesFocused(value => !value); resetMap(); }}>{homesFocused ? "Full estate" : "Focus on homes"}</button><button type="button" onClick={resetMap}><Compass size={15} /> Reset view</button></div>
+            <div className="estate-map-legend" role="group" aria-label="Map availability legend">{Object.entries(STATUS).map(([key, status]) => <span key={key}><i style={{ backgroundColor: status.fill }} />{status.label}</span>)}</div>
+            <div className="estate-map-surface" ref={mobileEstate ? planPaneRef : null}>{canvas}</div>
+            <p className="estate-map-instructions">{!homesFocused && zoom < 1.5 ? "Zoom in to see unit numbers" : "Drag to explore · Pinch or use + / − to zoom"}</p>
+          </div>
+          {view === "residences" ? <div className="estate-map-residences">{residenceList}</div> : null}
+          {selected ? <section className="estate-map-unit-card" aria-label={`Selected unit ${selected.unitNumber}`}><div><span className="estate-map-unit-card__status" style={{ color: STATUS[visualUnitStatus(selected.status)].fill }}>{selected.reservationLabel || STATUS[visualUnitStatus(selected.status)].label}</span><h3>Unit {selected.unitNumber}</h3><strong>{money(selected.price)}</strong><p>{selected.bedrooms || "—"} bedrooms{selected.sizeSqm ? ` · ${selected.sizeSqm} m²` : ""}</p></div><button type="button" aria-label="Clear selected unit" className="estate-map-unit-card__close" onClick={() => setSelectedId("")}><X size={18} /></button><button type="button" className="estate-map-unit-card__details" onClick={() => setUnitDetailsOpen(true)}>View unit details</button></section> : null}
+        </main>
+        {filterOpen ? <section className="estate-map-filters" aria-label="Filter residences"><div className="estate-map-filters__heading"><button type="button" aria-label="Back to estate map" onClick={() => setFilterOpen(false)}><ArrowLeft size={20} /></button><h3>Filters</h3><button type="button" onClick={clearFilters}>Clear all</button></div><div className="estate-map-filters__fields">{filtersPanel}</div><button type="button" className="estate-map-filters__apply" onClick={() => setFilterOpen(false)}>Show {units.length} {units.length === 1 ? "home" : "homes"}</button></section> : null}
+      </div>
+    </MobileEstateMapDialog> : null}
+  </>;
 
   return (
     <section
@@ -1493,7 +1598,7 @@ export default function PublicDevelopmentVisualExplorer({
           </div>
         </div>
       ) : null}
-      {content}
+      {mobileEstate ? mobileContent : content}
       {favourites.size ? (
         <div className="sticky bottom-4 z-40 mx-auto mt-4 flex max-w-fit items-center gap-3 rounded-xl bg-[#082f28] px-3 py-2 text-white shadow-2xl">
           <span className="flex items-center gap-2 pr-2 text-xs font-semibold">
@@ -1535,7 +1640,7 @@ export default function PublicDevelopmentVisualExplorer({
           ) : null}
         </div>
       ) : null}
-      {filterOpen ? (
+      {filterOpen && !mobileEstate ? (
         <div
           className="fixed inset-0 z-[90] bg-black/35"
           onClick={() => setFilterOpen(false)}
@@ -1564,9 +1669,9 @@ export default function PublicDevelopmentVisualExplorer({
           </div>
         </div>
       ) : null}
-      {selected ? <PublicDevelopmentUnitDialog
+      {selected && (!mobileEstate || (fullscreen && unitDetailsOpen)) ? <PublicDevelopmentUnitDialog
         estatePresentation={estatePresentation}
-        onReserve={onReserveUnit}
+        onReserve={mobileEstate && onReserveUnit ? unit => { closeMobileMap(); onReserveUnit(unit); } : onReserveUnit}
         key={String(selected.id)}
         unit={selected}
         media={media}
@@ -1579,7 +1684,7 @@ export default function PublicDevelopmentVisualExplorer({
         }
         onToggleShortlist={() => toggleShortlist(String(selected?.id))}
         onToggleCompare={() => toggleCompare(String(selected?.id))}
-        onClose={() => setSelectedId("")}
+        onClose={() => mobileEstate ? setUnitDetailsOpen(false) : setSelectedId("")}
       /> : null}
       {comparisonOpen ? (
         <ComparisonDialog

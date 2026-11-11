@@ -1,0 +1,58 @@
+.estate-map-preview { display: block; width: calc(100% - 2.5rem); margin: 0 auto; padding: 0; overflow: hidden; border: 1px solid #d8d9ce; border-radius: 14px; background: #fffdf9; color: #173d33; text-align: left; cursor: zoom-in; }
+.estate-map-preview__image { position: relative; display: block; overflow: hidden; width: 100%; background: #d8ded8; }
+.estate-map-preview__badge { position: absolute; left: 12px; top: 12px; display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-radius: 7px; background: #fffdf9ed; font-size: 11px; font-weight: 700; box-shadow: 0 2px 10px #132b2314; }
+.estate-map-preview__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; }
+.estate-map-preview__footer strong { display: block; font-size: 17px; }
+.estate-map-preview__footer small { display: block; margin-top: 5px; font-size: 11px; color: #61736a; line-height: 1.5; }
+.estate-map-dialog { position: fixed; inset: 0; margin: 0; padding: 0; border: 0; width: 100vw; max-width: none; height: 100vh; height: 100dvh; max-height: none; overflow: hidden; background: #fffdf9; color: #173d33; overscroll-behavior: contain; }
+.estate-map-dialog::backdrop { background: #152b23b3; }
+.estate-map-dialog *, .estate-map-preview * { box-sizing: border-box; }
+.estate-map-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; padding-top: env(safe-area-inset-top); }
+.estate-map-header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 18px; border-bottom: 1px solid #e2e3db; background: #fffdf9; }
+.estate-map-header h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.estate-map-header p { margin: 3px 0 0; font-size: 11px; color: #64746c; }
+.estate-map-header > button { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border: 1px solid #d8ded6; border-radius: 50%; background: white; }
+.estate-map-controls { display: grid; flex-shrink: 0; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 12px; background: #fffdf9; }
+.estate-map-controls[hidden], .estate-map-main[hidden], .estate-map-view[hidden] { display: none; }
+.estate-map-switch { display: flex; padding: 3px; border-radius: 9px; background: #edf0e9; }
+.estate-map-switch button { flex: 1; min-width: 0; min-height: 40px; border: 0; border-radius: 7px; font-size: 13px; font-weight: 700; }
+.estate-map-switch button[aria-pressed="true"] { background: #173d33; color: white; }
+.estate-map-filter-button { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border: 1px solid #d8ded6; border-radius: 9px; background: white; font-size: 13px; font-weight: 700; }
+.estate-map-search { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; padding: 0 12px; border: 1px solid #d8ded6; border-radius: 9px; color: #68766e; background: white; }
+.estate-map-search input { min-width: 0; width: 100%; height: 44px; border: 0; background: transparent; color: #173d33; font-size: 16px; outline: 0; }
+.estate-map-search:focus-within { outline: 2px solid #9c803e; outline-offset: 1px; }
+.estate-map-main { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; padding-bottom: env(safe-area-inset-bottom); }
+.estate-map-view { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.estate-map-map-actions { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 8px; padding: 0 12px 10px; }
+.estate-map-map-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 11px; border: 1px solid #d8ded6; border-radius: 7px; background: #fffdf9; font-size: 11px; font-weight: 700; }
+.estate-map-map-actions button[aria-pressed="true"] { background: #edf0e9; }
+.estate-map-surface { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #d8ded8; }
+.estate-map-instructions { flex-shrink: 0; margin: 0; padding: 9px 6px; text-align: center; font-size: 10px; color: #61736a; background: #fffdf9; }
+.estate-map-zoom { position: absolute; right: 12px; top: 76px; z-index: 10; color: #173d33; }
+.estate-map-marker { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid #ffffffc9; border-radius: 6px; font-size: 10px; font-weight: 800; line-height: 1; box-shadow: 0 1px 4px #10251f30; font-variant-numeric: tabular-nums; }
+.estate-map-marker--overview { width: 24px; height: 24px; border: 0; background: transparent !important; box-shadow: none; }
+.estate-map-marker--overview span { width: 8px; height: 8px; overflow: hidden; border: 1px solid #fff; border-radius: 50%; background: #173d33; color: transparent; }
+.estate-map-marker--overview:focus-visible span { width: 24px; height: 24px; border-radius: 5px; color: white; line-height: 22px; }
+.estate-map-residences { width: 100%; height: 100%; min-height: 0; padding-bottom: 0; }
+.estate-map-residences > aside { border: 0; }
+.estate-map-residences:has(~ .estate-map-unit-card) [aria-label="Residence list"] { padding-bottom: 175px; }
+.estate-map-unit-card { position: absolute; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); z-index: 30; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; padding: 15px; border: 1px solid #d6ddd4; border-radius: 14px; background: #fffdf9; box-shadow: 0 6px 30px #152c2333; }
+.estate-map-unit-card h3 { margin: 3px 0; font-size: 18px; font-weight: 700; }
+.estate-map-unit-card strong { font-size: 16px; }
+.estate-map-unit-card p { margin: 5px 0 0; font-size: 11px; color: #61736a; }
+.estate-map-unit-card__status { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.estate-map-unit-card__close { align-self: start; display: grid; place-items: center; height: 36px; width: 36px; border-radius: 50%; background: #edf0e9; }
+.estate-map-unit-card__details { grid-column: 1 / -1; min-height: 42px; border-radius: 7px; border: 0; background: #173d33; color: white; font-size: 12px; font-weight: 700; }
+.estate-map-filters { display: flex; flex: 1; flex-direction: column; min-height: 0; padding-bottom: env(safe-area-inset-bottom); }
+.estate-map-filters__heading { display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 8px 12px; }
+.estate-map-filters__heading h3 { flex: 1; font-size: 18px; font-weight: 700; }
+.estate-map-filters__heading button { display: grid; place-items: center; min-width: 44px; min-height: 44px; font-size: 12px; font-weight: 700; }
+.estate-map-filters__fields { display: grid; flex: 1; gap: 15px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 20px; }
+.estate-map-filters__fields input, .estate-map-filters__fields select { min-height: 44px; font-size: 16px; }
+.estate-map-filters__apply { flex-shrink: 0; min-height: 48px; margin: 12px; border-radius: 9px; background: #173d33; color: white; font-size: 14px; font-weight: 700; }
+.estate-map-dialog button:focus-visible, .estate-map-preview:focus-visible { outline: 3px solid #a7853e; outline-offset: -3px; }
+@media (orientation: landscape) and (max-height: 500px) { .estate-map-header { padding: 3px 10px; } .estate-map-header h2 { font-size: 15px; } .estate-map-header p { display: none; } .estate-map-controls { grid-template-columns: 150px auto minmax(0, 1fr); padding: 5px 10px; gap: 7px; } .estate-map-search { grid-column: auto; } .estate-map-map-actions { padding: 0 10px 4px; } .estate-map-instructions { padding: 4px; } .estate-map-unit-card { left: 12px; right: auto; width: 260px; } }
+
+.estate-map-legend { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: center; align-items: center; gap: 5px 12px; padding: 0 8px 8px; font-size: 9px; color: #61736a; }
+.estate-map-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.estate-map-legend i { width: 7px; height: 7px; border-radius: 2px; }

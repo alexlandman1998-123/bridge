@@ -1,9 +1,8 @@
 import { createElement } from "react";
-import { Bike, Flag, Flame, Footprints, Smile, Target, Trees } from "lucide-react";
+import { Bike, Flag, Flame, Footprints, Smile, Trees } from "lucide-react";
 
 const features = [
   { label: "Chipping green", icon: Flag },
-  { label: "Driving range area", icon: Target },
   { label: "Braai area", icon: Flame },
   { label: "Jogging trail", icon: Footprints },
   { label: "Cycling trail", icon: Bike },
