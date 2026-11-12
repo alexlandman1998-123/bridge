@@ -22,6 +22,7 @@ const shellClass = 'space-y-5 lg:space-y-6'
 const cardClass = 'rounded-[16px] border border-[#dfe7f0] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.045)]'
 const sectionClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)]'
 const countFormat = new Intl.NumberFormat('en-ZA')
+const transactionCurrency = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
 
 const toneStyles = {
   blue: { bubble: 'bg-[#edf5ff] text-[#1769d1]', stroke: '#4f86e8', soft: 'bg-[#edf5ff] text-[#1769d1]' },
@@ -411,7 +412,7 @@ export function ResidentialActiveTransactionsCarousel({ title, rows = [], scope 
     title: row.address || row.property || row.title || 'Transaction',
     subtitle: row.area || row.assignedAgent || 'Residential active deal',
     value: row.valueRaw || 0,
-    valueLabel: row.value || formatCurrencyCompactZAR(row.valueRaw || 0),
+    valueLabel: toNumber(row.valueRaw) > 0 ? transactionCurrency.format(Number(row.valueRaw)) : row.value || 'Value pending',
     ownerName: row.ownerName || row.assignedAgent || 'Unassigned',
     ownerRoleLabel: row.ownerRoleLabel || 'Agent',
     daysInStage: row.daysInStage || 0,
@@ -437,7 +438,7 @@ export function ResidentialActiveTransactionsCarousel({ title, rows = [], scope 
         compactCards
         summary={{
           primary: `${rows.length} transaction${rows.length === 1 ? '' : 's'} in progress`,
-          secondary: `${formatCurrencyCompactZAR(totalPipelineValue)} total pipeline value`,
+          secondary: `${transactionCurrency.format(totalPipelineValue)} total pipeline value`,
         }}
         emptyState={<EmptyState title="No active transactions" copy="Active transactions will appear here once deals move into progress." />}
       />
