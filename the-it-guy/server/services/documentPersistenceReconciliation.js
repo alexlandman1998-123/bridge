@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 // Explicit stores, including history. A missing table fails the whole audit.
 export const STORES = [
   ['documents', [['file_path', 'file_bucket', 'documents']]],
+  ['requirement_uploads', [['file_path', null, 'documents']]],
   ['private_listing_documents', [['storage_path', null, 'documents'], ['file_url', null, 'documents']]],
   ['company_documents', [['storage_path', 'storage_bucket', 'company-documents']]],
   ['development_documents', [['storage_path', 'storage_bucket', 'documents'], ['file_url', 'storage_bucket', 'documents']]],
@@ -49,6 +50,7 @@ const pick = (alias, fields) => `jsonb_build_object(${fields.flatMap(field => [q
 export function buildAuditSql(projectRef) {
   if (!/^[a-z]{20}$/.test(projectRef)) throw new Error('An explicit Supabase project reference is required.')
   const ownership = {
+    requirement_uploads:['requirement_id','document_id'],
     documents:['transaction_id','canonical_requirement_instance_id','status'],
     private_listing_documents:['private_listing_id','canonical_requirement_instance_id','requirement_id','promoted_document_id','promoted_transaction_id','status'],
     company_documents:['organisation_id'],
@@ -59,7 +61,7 @@ export function buildAuditSql(projectRef) {
   const roots = STORES.map(([table,items]) => {
     const fields = [...new Set([table === 'leads' ? 'lead_id' : 'id', ...(ownership[table] || []), ...items.flatMap(([p,b])=>[p,b].filter(Boolean))])]
     const hashes = table === 'development_documents' ? `, '_audit_row_fingerprint', md5(to_jsonb(t)::text), '_audit_immutable_fingerprint', md5((to_jsonb(t) - array['storage_bucket','storage_path','updated_at'])::text)` : ''
-    return `select ${quote(table)} as source, jsonb_build_object(${fields.flatMap(f=>[quote(f),`t.${f}`]).join(',')}${hashes}) as row from public.${table} t`
+    return `select ${quote(table)} as source, jsonb_build_object(${fields.flatMap(f=>[quote(f),`t.${f}`]).join(',')}${hashes}) as row from ${table === 'requirement_uploads' ? 'document_requirement_private.uploads' : `public.${table}`} t`
   }).join('\nunion all\n')
   const refs = STORES.flatMap(([table, fields]) => fields.map(([field, bucketField, bucket]) =>
     `select source, row, ${quote(field)} as field, coalesce(nullif(row->>${quote(bucketField || '_no_bucket')}, ''), ${quote(bucket)}) as bucket, regexp_replace(row->>${quote(field)}, '[?].*$', '') as path from roots where source=${quote(table)}${table.startsWith('listing_media') ? ` and row->>${quote(bucketField)} in (${BUCKETS.map(quote).join(',')})` : ''}`)).join('\nunion all\n')
@@ -109,6 +111,7 @@ contexts as (
 select jsonb_build_object('version',1,'projectRef',${quote(projectRef)},'capturedAt',now(),
   'sourceCounts',${aggregate('source_counts')},'references',${aggregate('reference_rows')},
   'objects',${aggregate('objects')},'contexts',${aggregate('contexts')},
+  'requirementUploads',(select coalesce(jsonb_agg(row),'[]'::jsonb) from roots where source='requirement_uploads'),
   'documents',(select coalesce(jsonb_agg(value),'[]'::jsonb) from documents),
   'requirements',(select coalesce(jsonb_agg(value),'[]'::jsonb) from requirements),
   'legacyLinks',${aggregate('legacy_links')}) as snapshot;
@@ -132,7 +135,7 @@ export function resolveReference(ref, projectRef) {
 
 export function reconcileSnapshot(snapshot) {
   if (snapshot.version !== 1 || !/^[a-z]{20}$/.test(snapshot.projectRef || '')) throw new Error('Invalid audit snapshot.')
-  for (const field of ['references','objects','sourceCounts','contexts','documents','requirements','legacyLinks']) if (!Array.isArray(snapshot[field])) throw new Error(`Incomplete snapshot: ${field}.`)
+  for (const field of ['references','objects','sourceCounts','contexts','documents','requirements','legacyLinks','requirementUploads']) if (!Array.isArray(snapshot[field])) throw new Error(`Incomplete snapshot: ${field}.`)
   for (const [source] of STORES) if (!snapshot.sourceCounts.some(row => row.source === source)) throw new Error(`Incomplete snapshot: ${source}.`)
   const objects = new Map(snapshot.objects.map(o => [`${o.bucket}:${o.path}`, o]))
   const referenced = new Set(), findings = [], repairs = [], counts = {}
@@ -162,15 +165,17 @@ export function reconcileSnapshot(snapshot) {
   for (const object of snapshot.objects) if (!referenced.has(`${object.bucket}:${object.path}`)) findings.push({ type: 'unreferenced_object_review', objectId: object.id, bucket: object.bucket, path: object.path, automaticDeletionAllowed: false })
   const requirements = new Map(snapshot.requirements.map(r => [r.id, r]))
   const shared = new Map(snapshot.documents.filter(d => d.source === 'documents').map(d => [d.id, d]))
+  const uploads = new Map(snapshot.requirementUploads.map(u => [u.id, u]))
   const listing = new Map(snapshot.documents.filter(d => d.source === 'private_listing_documents').map(d => [d.id, d]))
   const contextId = r => r.context_type === 'private_listing' ? (r.listing_id || r.context_id) : (r.transaction_id || r.context_id)
+  const transactionContextId = r => r.transaction_id || (r.context_type === 'transaction' ? r.context_id : null)
   const check = (ref, documentId, canonicalId, type, id) => {
     const doc = type === 'private_listing' ? (listing.get(documentId) || shared.get(documentId)) : shared.get(documentId)
     if (documentId && !doc) { issue('missing_document_record', ref, { documentId }); return }
     if (doc && ((type === 'transaction' && doc.transaction_id !== id) || (type === 'private_listing' && doc.private_listing_id !== id))) issue('wrong_context_link', ref, { documentId })
     const canonical = canonicalId ? requirements.get(canonicalId) : null
     if (canonicalId && !canonical) issue('missing_requirement_record', ref, { canonicalId })
-    if (canonical && (canonical.context_type !== type || contextId(canonical) !== id)) issue('wrong_requirement_context', ref, { canonicalId })
+    if (canonical && (type === 'transaction' ? transactionContextId(canonical) !== id : canonical.context_type !== type || contextId(canonical) !== id)) issue('wrong_requirement_context', ref, { canonicalId })
     if (doc && canonicalId && doc.canonical_requirement_instance_id !== canonicalId) issue('canonical_backlink_conflict', ref, { documentId, canonicalId, backlinkId: doc.canonical_requirement_instance_id || null })
   }
   for (const r of snapshot.requirements) if (r.satisfied_by_document_id) check({ source: 'document_requirement_instances', id: r.id }, r.satisfied_by_document_id, r.id, r.context_type, contextId(r))
@@ -178,7 +183,22 @@ export function reconcileSnapshot(snapshot) {
   for (const doc of snapshot.documents) if (doc.canonical_requirement_instance_id) {
     const r = requirements.get(doc.canonical_requirement_instance_id)
     if (!r) issue('missing_requirement_record', doc)
-    else if ((doc.source === 'documents' && (r.context_type !== 'transaction' || contextId(r) !== doc.transaction_id)) || (doc.source === 'private_listing_documents' && (r.context_type !== 'private_listing' || contextId(r) !== doc.private_listing_id))) issue('wrong_document_requirement_context', doc)
+    else if ((doc.source === 'documents' && transactionContextId(r) !== doc.transaction_id) || (doc.source === 'private_listing_documents' && (r.context_type !== 'private_listing' || contextId(r) !== doc.private_listing_id))) issue('wrong_document_requirement_context', doc)
+  }
+  for (const r of snapshot.requirements) if (r.latest_upload_id) {
+    const u = uploads.get(r.latest_upload_id)
+    if (!u) issue('missing_current_upload', { source: 'document_requirement_instances', id: r.id })
+    else if (u.requirement_id !== r.id) issue('upload_requirement_mismatch', { source: 'requirement_uploads', id: u.id })
+  }
+  for (const u of uploads.values()) {
+    const r = requirements.get(u.requirement_id)
+    if (!r) { issue('missing_requirement_record', { source: 'requirement_uploads', id: u.id }); continue }
+    if (!r.transaction_id) continue
+    const doc = shared.get(u.document_id)
+    if (!doc) issue('handover_document_missing', { source: 'requirement_uploads', id: u.id })
+    else if (doc.transaction_id !== r.transaction_id || doc.canonical_requirement_instance_id !== r.id) {
+      issue('handover_context_mismatch', { source: 'requirement_uploads', id: u.id })
+    }
   }
   const summary = { stores: snapshot.sourceCounts.length, sourceRows: snapshot.sourceCounts.reduce((n,r) => n + Number(r.rows),0), storageObjects: objects.size, references: snapshot.references.length, referenceStates: counts, repairCandidates: repairs.length,
     distinctMissingObjects: new Set(findings.filter(f=>f.type==='missing_object').map(f=>`${f.bucket}:${f.path}`)).size, findings: {} }

@@ -32,7 +32,7 @@ export function documentMonitorClient(env = process.env) {
   if (!url || !env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Monitoring unavailable')
   const target = new URL(url)
   const project = target.hostname.split('.')[0]
-  if (target.protocol !== 'https:' || target.hostname !== `${project}.supabase.co` || target.port || target.username || target.password || target.pathname !== '/' || !/^[a-z]{20}$/.test(project) || env.DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF !== project) throw new Error('Monitoring target unavailable')
+  if (target.protocol !== 'https:' || target.hostname !== `${project}.supabase.co` || target.port || target.username || target.password || target.pathname !== '/' || !/^[a-z]{20}$/.test(project) || String(env.DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF || '').trim() !== project) throw new Error('Monitoring target unavailable')
   return createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { fetch: (input, options) => fetch(input, { ...options, signal: AbortSignal.timeout(35000) }) },
@@ -42,7 +42,7 @@ export async function createDocumentTelemetryResponse({ method, headers = {}, bo
   if (method !== 'POST') return telemetryResponse(405, { accepted: false })
   // Same-origin, bounded, anonymous signals allow token portals to report errors
   // without sending their access token or trusting user-supplied ownership IDs.
-  if (env.DOCUMENT_PERSISTENCE_MONITOR_ENABLED !== 'true') return telemetryResponse(503, { accepted: false })
+  if (String(env.DOCUMENT_PERSISTENCE_MONITOR_ENABLED || '').trim() !== 'true') return telemetryResponse(503, { accepted: false })
   try {
     const origin = new URL(headers.origin || '')
     const allowed = new URL(env.ARCH9_APP_URL || '')

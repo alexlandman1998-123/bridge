@@ -1,3 +1,4 @@
+import { reportDocumentUploadTelemetry } from '../../lib/documentUploadObservability.js'
 import { requirementRecoveryKey, readRequirementCommand, retainRequirementCommand, clearRequirementCommand } from './documentRequirementCommandRecovery.js'
 import { validateDocumentUploadFile, withDocumentUploadMimeType } from '../../lib/documentUploadPolicy.js'
 import { notifyDocumentRequirementContextChanged } from './documentRequirementReadService.js'
@@ -46,7 +47,7 @@ export const restoreDocumentRequirement = (client, command) => executeDocumentRe
 
 export async function prepareDocumentRequirementUpload(file, { commandId, actorId, requirementId, contextType, contextId, expectedRevision, replacesUploadId = null }) {
   for (const id of [commandId, actorId, requirementId, contextId]) if (!uuid.test(id || '')) throw new Error('Upload identity is missing.')
-  const validated = validateDocumentUploadFile(file, { surface: 'requirement_command' })
+  const validated = validateDocumentUploadFile(file, { surface: contextType })
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
   const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   return {
@@ -58,7 +59,7 @@ export async function prepareDocumentRequirementUpload(file, { commandId, actorI
   }
 }
 
-export async function uploadDocumentRequirementFile(client, command, file, { onProgress = null } = {}) {
+async function performDocumentRequirementUpload(client, command, file, { onProgress = null, onRecovered = () => {} } = {}) {
   const report = createDocumentUploadProgressReporter(onProgress)
   const fileName = file?.name || command.payload?.fileName
   report('preparing', '', { fileName })
@@ -68,6 +69,7 @@ export async function uploadDocumentRequirementFile(client, command, file, { onP
   if (receipt) {
     report('saving', 'Checking the saved upload…', { fileName })
     const result = await executeDocumentRequirementCommand(client, command)
+    onRecovered()
     report('complete', 'Uploaded', { fileName })
     return result
   }
@@ -91,6 +93,27 @@ export async function uploadDocumentRequirementFile(client, command, file, { onP
   const result = await executeDocumentRequirementCommand(client, command)
   report('complete', 'Uploaded', { fileName, documentId: result.uploadId })
   return result
+}
+
+// A command ID survives retries and reloads: monitoring must use that same
+// identity and only report success after the database confirms the saved file.
+export async function uploadDocumentRequirementFile(client, command, file, options = {}) {
+  const attemptId = command?.commandId
+  let recovered = false
+  const telemetry = (outcome, error = null) => reportDocumentUploadTelemetry({
+    attemptId, surface: command?.contextType, stage: 'persistence', outcome, error,
+  })
+  telemetry('started')
+  try {
+    const result = await performDocumentRequirementUpload(client, command, file, {
+      ...options, onRecovered: () => { recovered = true },
+    })
+    telemetry(recovered ? 'recovered' : 'succeeded')
+    return result
+  } catch (error) {
+    telemetry(error?.code === 'document_save_unconfirmed' ? 'unconfirmed' : 'failed', error)
+    throw error
+  }
 }
 
 export async function reviewDocumentRequirement(client, { requirement, document, action, reason = '', storage = globalThis.localStorage } = {}) {

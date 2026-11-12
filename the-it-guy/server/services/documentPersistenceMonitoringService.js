@@ -5,7 +5,7 @@ import { DOCUMENT_UPLOAD_RELEASE_MATRIX } from '../../src/services/documents/doc
 import { documentMonitorClient, telemetryResponse } from './documentUploadTelemetryApi.js'
 
 const minute = 60000
-const criticalTypes = new Set(['missing_object', 'missing_storage_reference', 'missing_document_record', 'missing_requirement_record', 'wrong_context_link', 'wrong_requirement_context', 'wrong_document_requirement_context', 'canonical_backlink_conflict'])
+const criticalTypes = new Set(['missing_current_upload', 'upload_requirement_mismatch', 'handover_document_missing', 'handover_context_mismatch', 'missing_object', 'missing_storage_reference', 'missing_document_record', 'missing_requirement_record', 'wrong_context_link', 'wrong_requirement_context', 'wrong_document_requirement_context', 'canonical_backlink_conflict'])
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 function fresh(timestamp, now, maxAge) {
   const checked = Date.parse(timestamp)
@@ -67,12 +67,12 @@ export async function createDocumentPersistenceMonitorResponse({ method = 'GET',
   const expected = env.CRON_SECRET
   const supplied = String(headers.authorization || '')
   if (!expected || !timingSafeEqual(createHash('sha256').update(supplied).digest(), createHash('sha256').update(`Bearer ${expected}`).digest())) return telemetryResponse(401, { status: 'unavailable' })
-  if (env.DOCUMENT_PERSISTENCE_MONITOR_ENABLED !== 'true') return telemetryResponse(200, { status: 'disabled', monitoringActive: false })
+  if (String(env.DOCUMENT_PERSISTENCE_MONITOR_ENABLED || '').trim() !== 'true') return telemetryResponse(200, { status: 'disabled', monitoringActive: false })
   let projectRef
   try {
     const url = new URL(env.SUPABASE_URL || env.VITE_SUPABASE_URL)
     projectRef = url.hostname.split('.')[0]
-    if (url.protocol !== 'https:' || url.hostname !== `${projectRef}.supabase.co` || url.port || url.username || url.password || url.pathname !== '/' || !/^[a-z]{20}$/.test(projectRef) || env.DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF !== projectRef) throw new Error()
+    if (url.protocol !== 'https:' || url.hostname !== `${projectRef}.supabase.co` || url.port || url.username || url.password || url.pathname !== '/' || !/^[a-z]{20}$/.test(projectRef) || String(env.DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF || '').trim() !== projectRef) throw new Error()
   } catch { return telemetryResponse(503, { status: 'unavailable', reason: 'target_configuration' }) }
   const runKey = `${projectRef}:${Math.floor(now / (60*minute))}`
   let db

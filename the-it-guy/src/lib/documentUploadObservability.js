@@ -4,6 +4,7 @@ export const DOCUMENT_UPLOAD_TELEMETRY_EVENT = 'arch9:document-upload-telemetry'
 // tokens, participant names, notes or filenames. Only these fixed labels leave
 // the browser. Browser reports are untrusted operational signals, not save proof.
 const aliases = {
+  seller_lead: 'lead', buyer_lead: 'lead', private_listing: 'listing', developer_lead: 'developerLead',
   client_portal: 'buyer', buyer_bond_runtime: 'bondApplication', buyer_portal: 'buyer', buyer_onboarding: 'buyerOnboarding', seller_portal: 'seller',
   agent_listing: 'listing', internal_transaction: 'transaction', transaction_invoice: 'transaction',
   matter_financial_document: 'transaction', uploadClientPortalMatterFinancialProof: 'buyer',

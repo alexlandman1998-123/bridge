@@ -208,3 +208,27 @@ Provider references used for the route configuration:
 [Vercel cron authentication](https://vercel.com/docs/cron-jobs/manage-cron-jobs),
 [Vercel cron timing](https://vercel.com/docs/cron-jobs), and
 [Vercel-controlled request headers](https://vercel.com/docs/headers/request-headers).
+
+### Shared upload coverage repair (12 November 2026)
+
+Production monitoring was configured with trailing newlines in the non-secret
+`DOCUMENT_PERSISTENCE_MONITOR_ENABLED` and project-reference settings. The API
+now trims those settings before comparing them; absent or false enable flags
+still disable monitoring, and mismatched projects still fail closed.
+
+The shared requirement uploader now reports its retained command ID as the
+attempt ID, including receipt recovery and unconfirmed saves. It sends no file
+names, paths, content, portal tokens, contact IDs or context IDs. Monitoring
+failure cannot fail a customer save or cause a second upload.
+
+Apply only `20261112130000_document_monitor_shared_upload_coverage.sql` before
+releasing the matching API. It extends the service-only snapshot to include
+`document_requirement_private.uploads`. Both the hosted snapshot and manual audit
+now check pre-transaction storage ownership, current-upload links, and promoted
+transaction document identity. Lead-origin requirements may retain their original
+context while carrying a transaction ID; this is a valid handover, not a conflict.
+The migration does not change customer documents, statuses or file bytes.
+
+After an approved production release, verify a controlled upload and its retained
+attempt receipt, plus an authenticated scheduled monitor run and a saved private
+report. An empty log or absent run is not evidence that monitoring is healthy.

@@ -83,3 +83,19 @@ test('uncertain upload/save never deletes bytes; duplicate storage path can fini
   assert.equal((await uploadDocumentRequirementFile(client, command, input)).saved, true)
   assert.equal(deletes, 0)
 })
+
+test('shared upload monitoring uses the retained command identity and reports receipt recovery without private data', async () => {
+ const previous=globalThis.window, events=[]
+ globalThis.window={dispatchEvent:event=>{if(event.type==='arch9:document-upload-telemetry')events.push(event.detail)}}
+ try {
+  const command={...await prepare(file('papers')),contextType:'seller_lead'}
+  const client={rpc:async name=>({data:name.endsWith('_receipt')?{result:saved(command)}:saved(command)})}
+  await uploadDocumentRequirementFile(client,command,null)
+  assert.deepEqual(events.map(e=>e.outcome),['started','recovered'])
+  assert(events.every(e=>e.attemptId===command.commandId && e.surface==='lead'))
+  assert.doesNotMatch(JSON.stringify(events),/papers|filePath|fileName|seller_lead/)
+  events.length=0
+  await assert.rejects(uploadDocumentRequirementFile({rpc:async()=>{throw new TypeError('Network lost')}},command,null),{code:'document_save_unconfirmed'})
+  assert.deepEqual(events.map(e=>e.outcome),['started','unconfirmed'])
+ } finally { if(previous===undefined)delete globalThis.window;else globalThis.window=previous }
+})

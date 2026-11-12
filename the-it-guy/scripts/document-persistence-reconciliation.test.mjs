@@ -11,7 +11,7 @@ function fixture() {
   return { version:1, projectRef:project, capturedAt:'2026-10-08T00:00:00Z',
     sourceCounts:STORES.map(([source])=>({source,rows:0})),
     references:[{source:'development_documents',id:id(1),field:'storage_path',path:null}, {source:'development_documents',id:id(1),development_id:id(2),field:'file_url',bucket:'documents',path:`https://${project}.supabase.co/storage/v1/object/sign/documents/${path}`,before:{storage_bucket:null,storage_path:null},row_fingerprint:hash,immutable_fingerprint:hash}],
-    objects:[{id:id(3),bucket:'documents',path,fingerprint:hash}], contexts:[{type:'development',id:id(2),organisation_id:id(4)}], documents:[],requirements:[],legacyLinks:[] }
+    objects:[{id:id(3),bucket:'documents',path,fingerprint:hash}], contexts:[{type:'development',id:id(2),organisation_id:id(4)}], documents:[],requirements:[],legacyLinks:[],requirementUploads:[] }
 }
 
 test('signed URLs resolve to exact durable paths without carrying access tokens',()=>{
@@ -64,11 +64,12 @@ test('CLI rejects apply and accidental target mismatch before producing a packet
 
 async function database() {
   const db=new PGlite()
-  const fieldTypes={id:'uuid',lead_id:'uuid',development_id:'uuid',organisation_id:'uuid',transaction_id:'uuid',private_listing_id:'uuid',canonical_requirement_instance_id:'uuid',requirement_id:'uuid',promoted_document_id:'uuid',promoted_transaction_id:'uuid',context_id:'uuid',listing_id:'uuid',satisfied_by_document_id:'uuid',uploaded_document_id:'uuid',requested_document_id:'uuid',status:'text',context_type:'text',updated_at:'timestamptz',source_context_json:'jsonb',metadata:'jsonb',raw_enquiry_payload:'jsonb',documents_json:'jsonb',contracts_json:'jsonb',contract_signature_json:'jsonb',onboarding_documents_json:'jsonb',signature_asset_fingerprints_json:'jsonb'}
+  const fieldTypes={document_id:'uuid',id:'uuid',lead_id:'uuid',development_id:'uuid',organisation_id:'uuid',transaction_id:'uuid',private_listing_id:'uuid',canonical_requirement_instance_id:'uuid',requirement_id:'uuid',promoted_document_id:'uuid',promoted_transaction_id:'uuid',context_id:'uuid',listing_id:'uuid',satisfied_by_document_id:'uuid',uploaded_document_id:'uuid',requested_document_id:'uuid',status:'text',context_type:'text',updated_at:'timestamptz',source_context_json:'jsonb',metadata:'jsonb',raw_enquiry_payload:'jsonb',documents_json:'jsonb',contracts_json:'jsonb',contract_signature_json:'jsonb',onboarding_documents_json:'jsonb',signature_asset_fingerprints_json:'jsonb'}
   for(const [,fields] of STORES) for(const [p,b] of fields) {fieldTypes[p]='text';if(b)fieldTypes[b]='text'}
   const tables=[...new Set([...STORES.map(([s])=>s),'transactions','private_listings','developments','document_requirement_instances','transaction_required_documents','transaction_document_requirements','document_requests','private_listing_document_requirements'])]
   await db.exec('create schema storage; create table storage.objects(id uuid primary key,bucket_id text,name text,created_at timestamptz,updated_at timestamptz,version text);')
-  for(const table of tables) await db.exec(`create table public.${table}(${Object.entries(fieldTypes).map(([f,t])=>`${f} ${t}`).join(',')});`)
+  await db.exec('create schema document_requirement_private');
+  for(const table of tables) await db.exec(`create table ${table === 'requirement_uploads' ? 'document_requirement_private.uploads' : `public.${table}`}(${Object.entries(fieldTypes).map(([f,t])=>`${f} ${t}`).join(',')});`)
   await db.query('insert into developments(id,organisation_id) values ($1,$2)',[id(2),id(4)])
   const s=fixture();await db.query('insert into development_documents(id,development_id,file_url,status) values ($1,$2,$3,$4)',[id(1),id(2),s.references[1].path+'?token=secret','approved'])
   await db.query('insert into storage.objects(id,bucket_id,name,version) values ($1,$2,$3,$4)',[id(3),'documents',s.objects[0].path,'v1'])
@@ -153,4 +154,21 @@ test('real Postgres rolls back the entire batch if a later document changed sinc
     await assert.rejects(db.exec(buildRepairSql(r)),/changed since review/);await db.exec('rollback')
     assert.ok((await db.query('select storage_path from development_documents')).rows.every(r=>r.storage_path===null))
   }finally{await db.close()}
+})
+
+test('shared pre-transaction bytes are owned; handover and current-evidence gaps are detected', () => {
+ const s=fixture(), requirement=id(21), upload=id(22), transaction=id(23)
+ s.references.push({source:'requirement_uploads',id:upload,field:'file_path',bucket:'documents',path:s.objects[0].path})
+ s.requirementUploads=[{id:upload,requirement_id:requirement,file_path:s.objects[0].path,document_id:null}]
+ s.requirements=[{id:requirement,context_type:'seller_lead',context_id:id(24),latest_upload_id:upload,transaction_id:null}]
+ assert.equal(reconcileSnapshot(s).findings.some(f=>f.type==='unreferenced_object_review'),false)
+ s.requirements[0].transaction_id=transaction
+ assert(reconcileSnapshot(s).findings.some(f=>f.type==='handover_document_missing'))
+ s.requirementUploads[0].document_id=upload
+ s.documents=[{source:'documents',id:upload,transaction_id:transaction,canonical_requirement_instance_id:requirement}]
+ assert.equal(reconcileSnapshot(s).findings.some(f=>f.type==='wrong_document_requirement_context'||f.type.startsWith('handover_')),false)
+ s.documents[0].transaction_id=id(25)
+ assert(reconcileSnapshot(s).findings.some(f=>f.type==='handover_context_mismatch'))
+ s.requirements[0].latest_upload_id=id(26)
+ assert(reconcileSnapshot(s).findings.some(f=>f.type==='missing_current_upload'))
 })

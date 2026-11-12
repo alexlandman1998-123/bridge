@@ -9,7 +9,7 @@ import { DOCUMENT_MONITOR_SURFACES, normalizeDocumentUploadTelemetry } from '../
 
 const project='isdowlnollckzvltkasn', now=Date.now(), timestamp=new Date(now).toISOString()
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
-function snapshot() {return {version:1,projectRef:project,capturedAt:timestamp,sourceCounts:STORES.map(([source])=>({source,rows:0})),references:[],objects:[],contexts:[],documents:[],requirements:[],legacyLinks:[]}}
+function snapshot() {return {version:1,projectRef:project,capturedAt:timestamp,sourceCounts:STORES.map(([source])=>({source,rows:0})),references:[],objects:[],contexts:[],documents:[],requirements:[],legacyLinks:[],requirementUploads:[]}}
 const row=(surface,overrides={})=>({surface,attempts:1,succeeded:1,recovered:0,failed:0,unconfirmed:0,attention:0,stalled:0,permission_errors:0,network_errors:0,access_errors:0,...overrides})
 const outcomes=(rows=[])=>({capturedAt:timestamp,windowMinutes:60,rows})
 const evaluate=(s=snapshot(),t=outcomes(),previous=null)=>buildDocumentPersistenceMonitoringReport({snapshot:s,telemetry:t,previous,now})
@@ -89,11 +89,12 @@ test('hourly API is off by default, authenticates, pins its target and never res
 
 async function database(){
  const db=new PGlite()
- const types={id:'uuid',lead_id:'uuid',development_id:'uuid',organisation_id:'uuid',transaction_id:'uuid',private_listing_id:'uuid',canonical_requirement_instance_id:'uuid',requirement_id:'uuid',promoted_document_id:'uuid',promoted_transaction_id:'uuid',context_id:'uuid',listing_id:'uuid',satisfied_by_document_id:'uuid',uploaded_document_id:'uuid',requested_document_id:'uuid',status:'text',context_type:'text',updated_at:'timestamptz',source_context_json:'jsonb',metadata:'jsonb',raw_enquiry_payload:'jsonb',documents_json:'jsonb',contracts_json:'jsonb',contract_signature_json:'jsonb',onboarding_documents_json:'jsonb',signature_asset_fingerprints_json:'jsonb'}
+ const types={document_id:'uuid',id:'uuid',lead_id:'uuid',development_id:'uuid',organisation_id:'uuid',transaction_id:'uuid',private_listing_id:'uuid',canonical_requirement_instance_id:'uuid',requirement_id:'uuid',promoted_document_id:'uuid',promoted_transaction_id:'uuid',context_id:'uuid',listing_id:'uuid',satisfied_by_document_id:'uuid',uploaded_document_id:'uuid',requested_document_id:'uuid',status:'text',context_type:'text',updated_at:'timestamptz',source_context_json:'jsonb',metadata:'jsonb',raw_enquiry_payload:'jsonb',documents_json:'jsonb',contracts_json:'jsonb',contract_signature_json:'jsonb',onboarding_documents_json:'jsonb',signature_asset_fingerprints_json:'jsonb'}
  for(const [,fields] of STORES)for(const [p,b]of fields){types[p]='text';if(b)types[b]='text'}
  const tables=[...new Set([...STORES.map(([s])=>s),'transactions','private_listings','developments','document_requirement_instances','transaction_required_documents','transaction_document_requirements','document_requests','private_listing_document_requirements'])]
  await db.exec('create role anon;create role authenticated;create role service_role bypassrls;create schema storage;create table storage.objects(id uuid primary key,bucket_id text,name text,created_at timestamptz,updated_at timestamptz,version text);')
- for(const table of tables)await db.exec(`create table public.${table}(${Object.entries(types).map(([f,t])=>`${f} ${t}`).join(',')});`)
+ await db.exec('create schema document_requirement_private');
+ for(const table of tables)await db.exec(`create table ${table === 'requirement_uploads' ? 'document_requirement_private.uploads' : `public.${table}`}(${Object.entries(types).map(([f,t])=>`${f} ${t}`).join(',')});`)
  await db.exec('grant usage on schema public,storage to service_role;grant select on all tables in schema public,storage to service_role;')
  await db.exec(await readFile(new URL('../../../supabase/migrations/20261008201428_document_persistence_operational_monitoring.sql',import.meta.url),'utf8'))
  const coveragePatch=await readFile(new URL('../../../supabase/migrations/20261109104000_document_snapshot_lease_coverage.sql',import.meta.url),'utf8')
@@ -104,6 +105,9 @@ async function database(){
  const companyPatch=companyMigration.slice(companyStart,companyMigration.indexOf("notify pgrst,'reload schema'",companyStart))
  await db.exec(companyPatch)
  await db.exec(companyPatch) // Retains the service-only snapshot boundary on replay.
+ const sharedPatch=await readFile(new URL('../../../supabase/migrations/20261112130000_document_monitor_shared_upload_coverage.sql',import.meta.url),'utf8')
+ await db.exec(sharedPatch)
+ await db.exec(sharedPatch)
  return db
 }
 const args=(eventId,attemptId,outcome='succeeded',rateKey='a'.repeat(64))=>[eventId,attemptId,'buyer','persistence',outcome,'none',rateKey]
@@ -189,4 +193,29 @@ test('company files and retained versions are included in the service-only stora
   assert.equal(snapshot.references.filter(row=>row.source==='company_documents').length,2)
   assert.equal(snapshot.objects.filter(row=>row.bucket==='company-documents').length,2)
  }finally{await db.close()}
+})
+
+test('newline-padded non-secret production settings enable collector and scheduled monitoring', async () => {
+ const env={CRON_SECRET:'cron-secret',SUPABASE_URL:`https://${project}.supabase.co`,SUPABASE_SERVICE_ROLE_KEY:'server-secret',ARCH9_APP_URL:'https://app.arch9.co.za\n',DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF:`${project}\n`,DOCUMENT_PERSISTENCE_MONITOR_ENABLED:'true\n'}
+ const db=cronClient()
+ const response=await createDocumentPersistenceMonitorResponse({headers:{authorization:'Bearer cron-secret'},env,client:db,now})
+ assert.equal(response.status,200);assert.equal(response.body.monitoringActive,true)
+ const telemetry=await createDocumentTelemetryResponse({method:'POST',headers:{origin:'https://app.arch9.co.za'},body:normalizeDocumentUploadTelemetry({surface:'private_listing',stage:'persistence',outcome:'succeeded'}),env,client:{rpc:async()=>({data:'recorded'})}})
+ assert.equal(telemetry.status,202)
+ assert.equal((await createDocumentPersistenceMonitorResponse({headers:{authorization:'Bearer cron-secret'},env:{...env,DOCUMENT_PERSISTENCE_MONITOR_ENABLED:'false\n'},client:db,now})).body.status,'disabled')
+})
+
+test('hosted snapshot sees private pre-transaction files without granting browser table access', async () => {
+ const db=await database()
+ try {
+  await db.query('insert into document_requirement_private.uploads(id,requirement_id,file_path) values($1,$2,$3)',[id(801),id(802),'document-requirements/private.pdf'])
+  await db.exec('set role authenticated')
+  await assert.rejects(db.query('select * from document_requirement_private.uploads'),/permission denied/)
+  await db.exec('reset role;set role service_role')
+  const data=(await db.query('select public.document_persistence_monitor_snapshot($1) as value',[project])).rows[0].value
+  assert.equal(data.requirementUploads.length,1)
+  assert.equal(data.requirementUploads[0].requirement_id,id(802))
+  assert(data.references.some(r=>r.source==='requirement_uploads'&&r.path==='document-requirements/private.pdf'))
+  assert.equal(data.sourceCounts.find(r=>r.source==='requirement_uploads').rows,1)
+ } finally { await db.exec('reset role');await db.close() }
 })
