@@ -232,3 +232,12 @@ The migration does not change customer documents, statuses or file bytes.
 After an approved production release, verify a controlled upload and its retained
 attempt receipt, plus an authenticated scheduled monitor run and a saved private
 report. An empty log or absent run is not evidence that monitoring is healthy.
+
+The production verification on 14 November also exposed a report-size failure:
+comparison detail repeated enough historical findings to exceed the private
+receipt's 1 MiB limit. Stored finding detail and each comparison list are now
+bounded to 500 entries, with critical findings first. Full finding/alert and
+comparison counts remain available. `findingsComplete: false` and `findingDetail`
+make truncation explicit; incomplete detail cannot be a resolution baseline.
+The inventory itself remains uncapped, and no customer records are repaired or
+removed by this change.

@@ -219,3 +219,26 @@ test('hosted snapshot sees private pre-transaction files without granting browse
   assert.equal(data.sourceCounts.find(r=>r.source==='requirement_uploads').rows,1)
  } finally { await db.exec('reset role');await db.close() }
 })
+
+test('large historical inventories fit the receipt limit without hiding alerts or claiming resolution', async () => {
+ const s=snapshot()
+ s.objects=Array.from({length:6000},(_,i)=>({id:id(10000+i),bucket:'documents',path:`retained/${i}.pdf`}))
+ s.references=[{source:'documents',id:id(8000),field:'file_path',bucket:'documents',path:'missing/proof.pdf'}]
+ const report=evaluate(s)
+ assert.equal(report.status,'critical')
+ assert.equal(report.summary.findings,6001)
+ assert.equal(report.findings.length,500)
+ assert.equal(report.findings[0].severity,'critical')
+ assert.equal(report.findingsComplete,false)
+ assert.equal(report.alerts.find(a=>a.code==='persistence_mismatch').count,1)
+ assert.equal(report.changeCounts.newlyDetected,6001)
+ assert.equal(report.changes.newlyDetected.length,500)
+ assert(Buffer.byteLength(JSON.stringify(report))<900000)
+ const next=evaluate(snapshot(),outcomes(),report)
+ assert.equal(next.baselineUsable,false)
+ assert.deepEqual(next.changes.resolved,[])
+ const db=await database()
+ try {
+  await db.query('insert into public.document_persistence_monitor_runs(run_key,project_ref,status,report) values($1,$2,$3,$4::jsonb)',['large-monitor-fixture',project,report.status,JSON.stringify(report)])
+ } finally { await db.close() }
+})

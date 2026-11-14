@@ -5,6 +5,8 @@ import { DOCUMENT_UPLOAD_RELEASE_MATRIX } from '../../src/services/documents/doc
 import { documentMonitorClient, telemetryResponse } from './documentUploadTelemetryApi.js'
 
 const minute = 60000
+const MAX_FINDING_DETAILS = 500
+const boundedDetails = findings => [...findings].sort((a, b) => Number(b.severity === 'critical') - Number(a.severity === 'critical')).slice(0, MAX_FINDING_DETAILS)
 const criticalTypes = new Set(['missing_current_upload', 'upload_requirement_mismatch', 'handover_document_missing', 'handover_context_mismatch', 'missing_object', 'missing_storage_reference', 'missing_document_record', 'missing_requirement_record', 'wrong_context_link', 'wrong_requirement_context', 'wrong_document_requirement_context', 'canonical_backlink_conflict'])
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 function fresh(timestamp, now, maxAge) {
@@ -32,7 +34,8 @@ export function buildDocumentPersistenceMonitoringReport({ snapshot, telemetry, 
   // them for review, without asserting a lost upload or deleting anything.
   const findings = [...new Map(audit.findings.map(f=>{const receipt=issueReceipt(f);return [receipt.fingerprint, receipt]})).values()]
   for (const repair of audit.repairs) findings.push(issueReceipt({ type: 'legacy_storage_metadata', source: 'development_documents', id: repair.id }))
-  const baselineUsable = previous?.projectRef === snapshot.projectRef && fresh(previous?.checkedAt, now, 120 * minute) && Array.isArray(previous?.findings) && previous.snapshotComplete === true && previous.status !== 'unavailable'
+  const findingsComplete = findings.length <= MAX_FINDING_DETAILS
+  const baselineUsable = findingsComplete && previous?.findingsComplete !== false && previous?.projectRef === snapshot.projectRef && fresh(previous?.checkedAt, now, 120 * minute) && Array.isArray(previous?.findings) && previous.snapshotComplete === true && previous.status !== 'unavailable'
   const before = new Set(baselineUsable ? previous.findings.map(f=>f.fingerprint) : [])
   const current = new Set(findings.map(f=>f.fingerprint))
   const surfaces = DOCUMENT_UPLOAD_RELEASE_MATRIX.map(surface=>{
@@ -52,14 +55,17 @@ export function buildDocumentPersistenceMonitoringReport({ snapshot, telemetry, 
     if (row.attention) alerts.push({ severity: 'attention', code: 'upload_follow_up_pending', surface: row.surface, count: row.attention })
   }
   const gaps = surfaces.filter(s=>s.observation==='not_observed').map(s=>s.id)
+  const changes = { newlyDetected: findings.filter(f=>!before.has(f.fingerprint)), recurring: findings.filter(f=>before.has(f.fingerprint)), resolved: baselineUsable ? previous.findings.filter(f=>!current.has(f.fingerprint)) : [] }
   const status = alerts.some(a=>a.severity==='critical') ? 'critical' : alerts.length || findings.length ? 'attention' : gaps.length ? 'incomplete' : 'healthy'
   return {
     version: 1, projectRef: snapshot.projectRef, checkedAt: new Date(now).toISOString(), status,
-    documentDataMutated: false, snapshotComplete: true, baselineUsable, findings, alerts, surfaces,
-    changes: { newlyDetected: findings.filter(f=>!before.has(f.fingerprint)), recurring: findings.filter(f=>before.has(f.fingerprint)), resolved: baselineUsable ? previous.findings.filter(f=>!current.has(f.fingerprint)) : [] },
+    documentDataMutated: false, snapshotComplete: true, findingsComplete, baselineUsable, findings: boundedDetails(findings), alerts, surfaces,
+    changes: Object.fromEntries(Object.entries(changes).map(([key, rows]) => [key, boundedDetails(rows)])),
+    changeCounts: Object.fromEntries(Object.entries(changes).map(([key, rows]) => [key, rows.length])),
+    findingDetail: { total: findings.length, retained: Math.min(findings.length, MAX_FINDING_DETAILS), limit: MAX_FINDING_DETAILS },
     summary: { stores: audit.summary.stores, sourceRows: audit.summary.sourceRows, storageObjects: audit.summary.storageObjects, findings: findings.length, observedSurfaces: surfaces.length-gaps.length, requiredSurfaces: surfaces.length, telemetryWindowMinutes: 60 },
     coverageGaps: gaps,
-    limitations: ['Browser outcomes are untrusted operational signals, not verified document saves.', 'Storage catalog checks cannot prove readable bytes, role access or tenant isolation.', 'No recent activity is not proof that an upload space works.', 'Unmatched storage objects remain review-only; in-flight uploads and retained history can explain them.'],
+    limitations: ['Stored finding and comparison detail is bounded; full counts and alert totals are retained. Incomplete detail cannot establish issue resolution.', 'Browser outcomes are untrusted operational signals, not verified document saves.', 'Storage catalog checks cannot prove readable bytes, role access or tenant isolation.', 'No recent activity is not proof that an upload space works.', 'Unmatched storage objects remain review-only; in-flight uploads and retained history can explain them.'],
   }
 }
 export async function createDocumentPersistenceMonitorResponse({ method = 'GET', headers = {}, env = process.env, client, now = Date.now() } = {}) {
