@@ -1110,8 +1110,7 @@ export async function uploadDocument({
         reportProgress('complete', 'Document saved successfully.', { documentId: saved.id, postUploadProcessing: 'complete' })
         return saved
       }
-      const result = await attempt.persist({
-        save: async () => {
+      const saveDocument = async ({ allowLegacySchema = false } = {}) => {
           let result = await client
             .from('documents')
             .insert(documentInsertPayload)
@@ -1120,7 +1119,7 @@ export async function uploadDocument({
 
           // Only the optional deduplication column may be omitted. Never silently lose
           // audience, actor, bucket or canonical-link data on an older schema.
-          if (result.error && isMissingColumnError(result.error, 'upload_idempotency_key')) {
+          if (allowLegacySchema && result.error && isMissingColumnError(result.error, 'upload_idempotency_key')) {
             const { upload_idempotency_key: omittedIdempotencyKey, ...compatiblePayload } = documentInsertPayload
             result = await client
               .from('documents')
@@ -1160,7 +1159,7 @@ export async function uploadDocument({
               error: result.error,
               transactionId: activeTransactionId,
             })
-            await removeDocumentUploadObjectAfterFailedPersistence(client, {
+            if (allowLegacySchema) await removeDocumentUploadObjectAfterFailedPersistence(client, {
               bucket: uploadedBucket,
               filePath,
               error: result.error,
@@ -1169,7 +1168,12 @@ export async function uploadDocument({
           }
 
           return result
-        },
+      }
+      const result = await attempt.persist({
+        save: () => saveDocument({ allowLegacySchema: true }),
+        // This retry must retain the key protected by the database unique index.
+        // An older schema may not fall back to a non-idempotent replay.
+        retrySave: () => saveDocument(),
         read: () => readSavedUploadByPath(client, { table: 'documents', column: 'file_path', path: filePath, filters: { transaction_id: activeTransactionId } }),
       })
 

@@ -222,7 +222,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
           throw unconfirmed(error)
         }
       },
-      async persist({ save, read, cleanup = null, isSaved = result => Boolean(rowOf(result)?.id) }) {
+      async persist({ save, retrySave = null, read, cleanup = null, isSaved = result => Boolean(rowOf(result)?.id) }) {
         monitoringStage = 'saving'
         report('saving', '', { fileName: file.name })
         const recover = async () => {
@@ -233,17 +233,21 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
           writeReceipt(key, state)
           return result
         }
-        if (state.saveStarted) {
-          // An empty read does not prove that an earlier timed-out request has
-          // stopped executing. Never resubmit that write blindly.
-          try { return await recover() || Promise.reject(unconfirmed()) } catch (error) { throw unconfirmed(error) }
+        const retryingSave = Boolean(state.saveStarted)
+        if (retryingSave) {
+          // Only a caller with a database-enforced idempotent write may replay
+          // after a successful empty read. Denied/failed reads still stop here.
+          let recovered
+          try { recovered = await recover() } catch (error) { throw unconfirmed(error) }
+          if (recovered) return recovered
+          if (!retrySave) throw unconfirmed()
         }
         state.saveStarted = true
         writeReceipt(key, state)
         let result
         let failure
         try {
-          result = await withDocumentUploadDeadline(save, { timeoutMs: limits.saving, message: 'The save took too long. Checking whether the document was saved…' })
+          result = await withDocumentUploadDeadline(retryingSave ? retrySave : save, { timeoutMs: limits.saving, message: 'The save took too long. Checking whether the document was saved…' })
           if (result?.error) throw result.error
           if (!isSaved(result)) throw unconfirmed()
           confirm(result)
@@ -255,7 +259,7 @@ export async function runRecoverableDocumentUpload({ client, scope, file, run, t
           const recovered = await recover()
           if (recovered) return recovered
         } catch { /* Failed or denied reads cannot establish absence. */ }
-        if (isDefiniteUploadSaveRejection(failure) && failure?.code !== '23505') {
+        if (!retryingSave && isDefiniteUploadSaveRejection(failure) && failure?.code !== '23505') {
           // Cleanup is only allowed for a definite rejection of this first
           // submission. No earlier uncertain mutation was replayed.
           try { if (cleanup) await withDocumentUploadDeadline(cleanup, { timeoutMs: limits.recovery }) } catch { /* Retain an unlinked object rather than obscure the rejection. */ }

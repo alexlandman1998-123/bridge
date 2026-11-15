@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { runRecoverableDocumentUpload, isDefiniteUploadSaveRejection } from '../documentUploadRecovery.js'
 import { refreshAfterSavedDocumentUpload } from '../documentUploadLifecycle.js'
 
-function fixture({ saveFailure = null, committed = true, readable = true, followUpFails = false } = {}) {
+function fixture({ saveFailure = null, committed = true, readable = true, followUpFails = false, retrySafe = false } = {}) {
   const scope = ['diagnostic', crypto.randomUUID()]
   const file = new File(['%PDF-1.4 diagnostic'], 'identity.pdf', { type: 'application/pdf', lastModified: 1 })
   const state = { uploads: 0, saves: 0, deletes: 0, reads: 0, row: null, readable, saveFailure, committed }
@@ -12,14 +12,16 @@ function fixture({ saveFailure = null, committed = true, readable = true, follow
     run: async attempt => {
       const path = attempt.path('transaction-test/identity.pdf')
       await attempt.upload(async () => { state.uploads++; return 'documents' })
+      const save = async () => {
+        state.saves++
+        await Promise.resolve()
+        if (state.committed) state.row = { id: crypto.randomUUID(), file_path: path }
+        if (state.saveFailure) throw state.saveFailure
+        return { data: state.row }
+      }
       const saved = await attempt.persist({
-        save: async () => {
-          state.saves++
-          await Promise.resolve()
-          if (state.committed) state.row = { id: crypto.randomUUID(), file_path: path }
-          if (state.saveFailure) throw state.saveFailure
-          return { data: state.row }
-        },
+        save,
+        retrySave: retrySafe ? save : null,
         read: async () => {
           state.reads++
           if (!state.readable) throw new Error('Read unavailable')
@@ -257,4 +259,29 @@ test('a denied Storage reconciliation retains recovery and never submits a docum
   await assert.rejects(action(), { code: 'document_save_unconfirmed' })
   await assert.rejects(action(), { code: 'document_save_unconfirmed' })
   assert.deepEqual([transfers, saves], [1, 0])
+})
+
+
+test('an idempotent retry saves the retained object after an interrupted metadata request', async () => {
+  const f = fixture({ saveFailure: new TypeError('Failed to fetch'), committed: false, retrySafe: true })
+  await assert.rejects(f.action(), { code: 'document_save_unconfirmed' })
+  assert.equal(f.state.row, null)
+  f.state.saveFailure = null
+  f.state.committed = true
+  const recovered = await f.action()
+  assert.equal(recovered.id, f.state.row.id)
+  assert.deepEqual([f.state.uploads, f.state.saves, f.state.deletes], [1, 2, 0])
+  assert.equal((await f.action()).id, recovered.id)
+  assert.deepEqual([f.state.uploads, f.state.saves], [1, 2])
+})
+
+test('idempotent replay still requires an authorised read and retains bytes after retry rejection', async () => {
+  const f = fixture({ saveFailure: new TypeError('Lost response'), committed: false, readable: false, retrySafe: true })
+  await assert.rejects(f.action(), { code: 'document_save_unconfirmed' })
+  await assert.rejects(f.action(), { code: 'document_save_unconfirmed' })
+  assert.equal(f.state.saves, 1)
+  f.state.readable = true
+  f.state.saveFailure = Object.assign(new Error('Schema no longer supports the key'), { code: 'PGRST204' })
+  await assert.rejects(f.action(), { code: 'document_save_unconfirmed' })
+  assert.deepEqual([f.state.uploads, f.state.saves, f.state.deletes], [1, 2, 0])
 })

@@ -9307,6 +9307,7 @@ function ArchlineTransferWorkspace({
 }
 
 const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {
+  general: [{ key: 'general_files', label: 'General Files', icon: FileText, tokens: [] }],
   buyer: [
     { key: 'buyer_property', label: 'Property Documents', icon: FileCheck2, tokens: ['property', 'title deed', 'building plan', 'sectional', 'body corporate', 'compliance', 'disclosure'] },
     { key: 'buyer_sales', label: 'Sale Documents', icon: Building2, tokens: ['sale', 'sales', 'otp', 'offer to purchase', 'agreement', 'mandate', 'addenda', 'addendum', 'suspensive'] },
@@ -9326,6 +9327,7 @@ const ATTORNEY_DOCUMENT_DASHBOARD_CATEGORY_DEFINITIONS = {
 const ATTORNEY_DOCUMENT_DASHBOARD_PARTIES = [
   { key: 'buyer', label: 'Buyer Documents', description: 'Manage documents provided by the buyer.' },
   { key: 'seller', label: 'Seller Documents', description: 'Manage documents provided by the seller.' },
+  { key: 'general', label: 'Other Matter Documents', description: 'Saved files outside the buyer and seller categories.' },
 ]
 
 const ATTORNEY_DOCUMENT_RECEIVED_STATUSES = new Set(['uploaded', 'pending_review', 'verified', 'generated'])
@@ -9366,7 +9368,7 @@ function getAttorneyDashboardRowParty(row = {}) {
   ].map((value) => String(value || '').toLowerCase()).join(' ')
   if (/\bseller\b|\bdeveloper\b/.test(haystack)) return 'seller'
   if (/\bbuyer\b|\bclient\b|purchaser/.test(haystack)) return 'buyer'
-  return ''
+  return 'general'
 }
 
 function getAttorneyDashboardCategoryKey(row = {}, party = '') {
@@ -9705,6 +9707,7 @@ function ArchlineDocumentsWorkspace({
                 ['all', 'All'],
                 ['buyer', 'Buyer'],
                 ['seller', partyTabLabels.seller],
+                ['general', 'Other files'],
               ].map(([keyValue, label]) => (
                 <button
                   key={keyValue}
