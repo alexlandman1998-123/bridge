@@ -83,7 +83,9 @@ export async function createDocumentPersistenceMonitorResponse({ method = 'GET',
   const runKey = `${projectRef}:${Math.floor(now / (60*minute))}`
   let db
   try {
-    db = client || documentMonitorClient(env)
+    // The uncapped history scan exceeds the ordinary telemetry request window.
+    // Stay below the database REST API's 60s ceiling and this route's 120s cap.
+    db = client || documentMonitorClient(env, { requestTimeoutMs: 55000 })
     const [snapshot, telemetry, previous] = await Promise.all([
       db.rpc('document_persistence_monitor_snapshot', { p_project_ref: projectRef }),
       db.rpc('document_upload_outcome_summary'),

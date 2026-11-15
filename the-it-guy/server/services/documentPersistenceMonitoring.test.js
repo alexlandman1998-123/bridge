@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { STORES } from '../../scripts/document-persistence-reconciliation.mjs'
 import { buildDocumentPersistenceMonitoringReport, createDocumentPersistenceMonitorResponse } from './documentPersistenceMonitoringService.js'
-import { createDocumentTelemetryResponse, validateDocumentTelemetry, readDocumentTelemetryBody } from './documentUploadTelemetryApi.js'
+import { createDocumentTelemetryResponse, validateDocumentTelemetry, readDocumentTelemetryBody, documentMonitorClient } from './documentUploadTelemetryApi.js'
 import { DOCUMENT_MONITOR_SURFACES, normalizeDocumentUploadTelemetry } from '../../src/lib/documentUploadObservability.js'
 
 const project='isdowlnollckzvltkasn', now=Date.now(), timestamp=new Date(now).toISOString()
@@ -13,6 +13,19 @@ function snapshot() {return {version:1,projectRef:project,capturedAt:timestamp,s
 const row=(surface,overrides={})=>({surface,attempts:1,succeeded:1,recovered:0,failed:0,unconfirmed:0,attention:0,stalled:0,permission_errors:0,network_errors:0,access_errors:0,...overrides})
 const outcomes=(rows=[])=>({capturedAt:timestamp,windowMinutes:60,rows})
 const evaluate=(s=snapshot(),t=outcomes(),previous=null)=>buildDocumentPersistenceMonitoringReport({snapshot:s,telemetry:t,previous,now})
+
+test('the hourly scan gets its own deadline while upload telemetry keeps the default', async t => {
+ const deadlines=[]
+ t.mock.method(AbortSignal,'timeout',ms=>{deadlines.push(ms);return new AbortController().signal})
+ t.mock.method(globalThis,'fetch',async()=>new Response('{}',{status:200,headers:{'Content-Type':'application/json'}}))
+ const env={SUPABASE_URL:`https://${project}.supabase.co`,SUPABASE_SERVICE_ROLE_KEY:'test-only',DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF:project}
+ await documentMonitorClient(env).rpc('record_document_upload_outcome')
+ const result=await createDocumentPersistenceMonitorResponse({env:{...env,CRON_SECRET:'test-cron',DOCUMENT_PERSISTENCE_MONITOR_ENABLED:'true'},headers:{authorization:'Bearer test-cron'}})
+ assert.equal(result.status,503) // Empty fixture is not a complete inventory.
+ assert.equal(deadlines[0],35000)
+ assert.ok(deadlines.slice(1).every(ms=>ms===55000))
+ assert.ok(deadlines.length>1)
+})
 
 test('all audited stores and upload areas are covered, but no traffic never means healthy',()=>{
  const report=evaluate();assert.equal(report.summary.stores,STORES.length);assert.equal(report.summary.requiredSurfaces,27);assert.equal(report.coverageGaps.length,27);assert.equal(report.status,'incomplete');assert.equal(report.snapshotComplete,true)

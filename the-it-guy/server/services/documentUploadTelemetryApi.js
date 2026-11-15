@@ -27,7 +27,7 @@ export async function readDocumentTelemetryBody(request) {
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
-export function documentMonitorClient(env = process.env) {
+export function documentMonitorClient(env = process.env, { requestTimeoutMs = 35000 } = {}) {
   const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL
   if (!url || !env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('Monitoring unavailable')
   const target = new URL(url)
@@ -35,7 +35,7 @@ export function documentMonitorClient(env = process.env) {
   if (target.protocol !== 'https:' || target.hostname !== `${project}.supabase.co` || target.port || target.username || target.password || target.pathname !== '/' || !/^[a-z]{20}$/.test(project) || String(env.DOCUMENT_PERSISTENCE_MONITOR_PROJECT_REF || '').trim() !== project) throw new Error('Monitoring target unavailable')
   return createClient(url, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { fetch: (input, options) => fetch(input, { ...options, signal: AbortSignal.timeout(35000) }) },
+    global: { fetch: (input, options) => fetch(input, { ...options, signal: AbortSignal.timeout(requestTimeoutMs) }) },
   })
 }
 export async function createDocumentTelemetryResponse({ method, headers = {}, body, env = process.env, client } = {}) {
