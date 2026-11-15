@@ -42,6 +42,13 @@ try {
   assert.equal(reconciled.kpis.projectedCommission, 200000, 'preserve agreed stored amounts when prices differ')
   assert.equal(reconciledCompany.totals.projectedCommission, 200000)
   assert.equal(reconciledCompany.totals.commissionSnapshotsNeedingReview, 2)
+  const lifecycleStock = ['active', 'under_offer', 'seller_lead', 'onboarding_completed', 'sold', 'withdrawn'].map((status, index) => ({ id: `lifecycle-${index}`, branch_id: 'head-office', listing_status: status }))
+  const lifecycleBranch = __agencyBranchServiceTestUtils.buildBranchViewModel({ id: 'head-office' }, { listings: lifecycleStock })
+  const lifecycleOverview = buildBranchWorkspaceOverview(lifecycleBranch)
+  const lifecycleCompany = __agencyBranchServiceTestUtils.buildAgencyBranchOverview([lifecycleBranch])
+  assert.equal(lifecycleBranch.kpis.activeListings, 2, 'preparation records are current stock, not active listings')
+  assert.equal(lifecycleOverview.portfolio.active, 2)
+  assert.equal(lifecycleCompany.totals.activeListings, 2)
   const unknown = __agencyBranchServiceTestUtils.buildBranchViewModel({ id: 'head-office' }, { transactions: __agencyBranchServiceTestUtils.attachCommissionSnapshots(snapshotDeals, [], false) })
   assert.equal(unknown.kpis.hasProjectedCommissionData, false, 'failed commission reads are not confirmed zero')
   const historicalStock = __agencyBranchServiceTestUtils.buildBranchViewModel(

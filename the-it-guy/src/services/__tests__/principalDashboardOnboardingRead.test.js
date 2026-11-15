@@ -4,6 +4,18 @@ vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabas
 import { getPrincipalDashboardData, clearPrincipalDashboardRuntimeCache } from '../principalDashboardService'
 
 describe('principal dashboard seller onboarding source', () => {
+  it('uses the same active listing definition as company and branch reporting', async () => {
+    clearPrincipalDashboardRuntimeCache()
+    const listings = ['active', 'under_offer', 'seller_lead', 'onboarding_completed', 'sold', 'withdrawn'].map((status, index) => ({ id: `stock-${index}`, organisation_id: 'agency', listing_status: status }))
+    listings.push({ id: 'qa-stock', organisation_id: 'agency', listing_status: 'active', is_demo_data: true })
+    from.mockImplementation(table => {
+      const query = { then: resolve => Promise.resolve({ data: table === 'private_listings' ? listings : [], error: null }).then(resolve) }
+      for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = () => query
+      return query
+    })
+    const result = await getPrincipalDashboardData({ organisationId: 'agency', forceRefresh: true })
+    expect(result.kpis.activeListings).toBe(2)
+  })
   it('preserves the latest saved zero commission instead of using a stale amount or a percentage', async () => {
     clearPrincipalDashboardRuntimeCache()
     from.mockImplementation(table => {

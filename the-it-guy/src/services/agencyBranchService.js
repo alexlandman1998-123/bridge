@@ -1,4 +1,4 @@
-import { calculateBranchLeadConversion, resolveBranchReportingRange } from './branchDashboardModel'
+import { calculateBranchLeadConversion, isActiveBranchListing, resolveBranchReportingRange } from './branchDashboardModel'
 import { isDashboardTransactionActive, isDashboardTransactionAwaitingReview } from '../lib/dashboardTransactionIntegrity'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { hasOpenAgencyOperations } from '../lib/agencyOperationsAccess'
@@ -27,7 +27,6 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const INACTIVE_LISTING_STATUSES = new Set(['withdrawn', 'sold', 'archived', 'cancelled', 'canceled', 'completed', 'inactive'])
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Math.round(value)))
@@ -52,8 +51,7 @@ function isActiveTransaction(row = {}) {
 }
 
 function isActiveListing(row = {}) {
-  const status = normalizeLower(row?.listing_status || row?.stage || row?.status)
-  return !INACTIVE_LISTING_STATUSES.has(status)
+  return isActiveBranchListing(row)
 }
 
 function getListingValue(row = {}) {

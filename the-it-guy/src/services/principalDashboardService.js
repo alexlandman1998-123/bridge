@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { isActiveBranchListing } from './branchDashboardModel'
 import { getReportingRole, getReportingRoleLabel } from '../lib/reportingRoleLogic'
 import { assertResolvedWorkspaceContext } from './workspaceResolutionService'
 import {
@@ -134,12 +135,8 @@ function isBetween(value, start, end) {
   return date >= start && date < end
 }
 
-function getPrincipalListingStatus(row = {}) {
-  return normalizeKey(row.listing_status || row.listingStatus || row.status)
-}
-
 function isActivePrincipalListing(row = {}) {
-  return ['active', 'listing_active'].includes(getPrincipalListingStatus(row))
+  return isActiveBranchListing(row)
 }
 
 function getPrincipalListingPrice(row = {}) {
@@ -1793,8 +1790,8 @@ async function getPrincipalDashboardDataUncached({
       'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
     ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
     () => safeSelect('private_listings', [
-      'id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, is_active, asking_price, estimated_value, created_at, updated_at',
-      'id, organisation_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, is_active, asking_price, estimated_value, created_at, updated_at',
+      'id, organisation_id, is_demo_data, branch_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, is_active, asking_price, estimated_value, created_at, updated_at',
+      'id, organisation_id, is_demo_data, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, is_active, asking_price, estimated_value, created_at, updated_at',
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
     () => safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
     () => [],
