@@ -4,6 +4,24 @@ vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabas
 import { getPrincipalDashboardData, clearPrincipalDashboardRuntimeCache } from '../principalDashboardService'
 
 describe('principal dashboard seller onboarding source', () => {
+  it('excludes synthetic finance deals and onboarding placeholders from the real company dashboard', async () => {
+    clearPrincipalDashboardRuntimeCache()
+    const transactions = [
+      { id: 'real-one', organisation_id: 'agency', current_main_stage: 'OTP', sales_price: 1240000, is_active: true },
+      { id: 'real-two', organisation_id: 'agency', current_main_stage: 'OTP', sales_price: 1600000, is_active: true },
+      { id: 'qa', organisation_id: 'agency', current_main_stage: 'FIN', sales_price: 1000000, is_active: true, is_demo_data: true },
+      { id: 'pending', organisation_id: 'agency', current_main_stage: 'AVAIL', stage: 'Available', sales_price: 875000, is_active: true },
+    ]
+    from.mockImplementation(table => {
+      const query = { then: resolve => Promise.resolve({ data: table === 'transactions' ? transactions : [], error: null }).then(resolve) }
+      for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = () => query
+      return query
+    })
+    const result = await getPrincipalDashboardData({ organisationId: 'agency', forceRefresh: true })
+    expect(JSON.stringify(result)).not.toContain('"qa"')
+    expect(result.activeTransactions).toHaveLength(2)
+    expect(result.kpis.pipelineValue).toBe(2840000)
+  })
   it('reads the current listing-owned rows and retains their commission calculation', async () => {
     calls.length = 0
     clearPrincipalDashboardRuntimeCache()
@@ -18,6 +36,7 @@ describe('principal dashboard seller onboarding source', () => {
     const result = await getPrincipalDashboardData({ organisationId: 'agency' })
     expect(calls.some((call) => call.table === 'seller_onboarding')).toBe(false)
     expect(calls).toContainEqual({ table: 'private_listing_seller_onboarding', method: 'in', args: ['private_listing_id', ['listing']] })
-    expect(result.kpis.commissionForecast).toBe(100000)
+    expect(result.kpis.listingStockCommissionForecast).toBe(100000)
+    expect(result.kpis.commissionForecast).toBe(0)
   })
 })

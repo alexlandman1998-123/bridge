@@ -1,4 +1,5 @@
 import { getBranch, readScopedBranchRows } from './agencyBranchService'
+import { getWebsiteListingPublicationStatuses } from './websiteListingPublicationService'
 
 function mergeSources(results, identity) {
   return { rows: [...new Map(results.flatMap((result) => result.rows).map((row) => [row[identity], row])).values()], available: results.every((result) => result.available) }
@@ -31,5 +32,14 @@ export async function getBranchDashboardData(branchId) {
     return { ...lead, name: lead.name || lead.full_name || [contact.first_name, contact.last_name].filter(Boolean).join(' '), phone: lead.phone || contact.phone || '', email: lead.email || contact.email || '' }
   })
   const availability = branch.dataAvailability
-  return { ...branch, leads, appointments: appointments.rows, offers: offers.rows, leadActivities: activities.rows, commissionSnapshots: commissions.rows, transactionHistory: history.rows, dataAvailability: { ...availability, appointments: appointments.available && availability.listings && availability.leads && availability.transactions, offers: offers.available && availability.listings && availability.leads && availability.transactions, leadActivities: activities.available, commissionSnapshots: commissions.available, transactionHistory: history.available } }
+  const websiteStatuses = {}
+  // Only authorised branch listing IDs reach the existing membership-guarded RPC.
+  // A failed lookup leaves the website status unknown without hiding the listing.
+  for (let offset = 0; offset < listingIds.length; offset += 100) {
+    try {
+      Object.assign(websiteStatuses, await getWebsiteListingPublicationStatuses(listingIds.slice(offset, offset + 100)))
+    } catch { /* Publication availability is independent of internal listing status. */ }
+  }
+  const listings = branch.listings.map((listing) => ({ ...listing, websitePublication: websiteStatuses[listing.id] || null }))
+  return { ...branch, listings, leads, appointments: appointments.rows, offers: offers.rows, leadActivities: activities.rows, commissionSnapshots: commissions.rows, transactionHistory: history.rows, dataAvailability: { ...availability, appointments: appointments.available && availability.listings && availability.leads && availability.transactions, offers: offers.available && availability.listings && availability.leads && availability.transactions, leadActivities: activities.available, commissionSnapshots: commissions.available, transactionHistory: history.available } }
 }

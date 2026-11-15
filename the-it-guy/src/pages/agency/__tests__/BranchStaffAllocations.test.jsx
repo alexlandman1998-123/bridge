@@ -53,6 +53,20 @@ it('preserves unavailable figures and explains them instead of showing zero', as
   expect(owner.getByText('Some figures could not be loaded.')).toBeTruthy()
   expect(owner.queryByText('R 0')).toBeNull()
 })
+it('counts email-assigned owner deals and excludes pending onboarding and synthetic stock', async () => {
+  const branch = fixture()
+  branch.transactions = [
+    ...['otp-one', 'otp-two'].map(id => ({ id, assigned_branch_id: branch.id, assigned_agent_email: 'OWNER@EXAMPLE.TEST', current_main_stage: 'OTP', stage: 'OTP Signed', lifecycle_state: 'active' })),
+    { id: 'pending', assigned_branch_id: branch.id, assigned_user_id: 'owner-user', current_main_stage: 'AVAIL', stage: 'Available', lifecycle_state: 'active' },
+    { id: 'test', assigned_branch_id: branch.id, assigned_user_id: 'owner-user', current_main_stage: 'FIN', is_demo_data: true },
+  ]
+  branch.listings.push({ id: 'test-stock', branch_id: branch.id, assigned_agent_id: 'owner-user', listing_status: 'active', is_demo_data: true })
+  api.branch.mockResolvedValue(branch)
+  show()
+  const owner = within((await screen.findByRole('heading', { name: 'Owner One' })).closest('button'))
+  expect(metric(owner, 'Current listings')).toBe('Current listings2')
+  expect(metric(owner, 'In progress')).toBe('In progress2')
+})
 it('retains staff financial restrictions for a branch manager', async () => {
   api.settings.mockResolvedValue({ organisation: { id: 'company-one' }, membershipRole: 'branch_manager' })
   show()
@@ -76,6 +90,28 @@ it('loads saved cover photos for visible branch listings instead of relying on a
   show('listings')
   expect((await screen.findByAltText('sale')).getAttribute('src')).toBe('https://photos.test/thumbnail.jpg')
   expect(api.covers).toHaveBeenCalledWith(['sale', 'rental', 'draft', 'sold'], expect.objectContaining({ thumbnail: true, onCover: expect.any(Function) }))
+})
+it('keeps active stock filters consistent and shows removed website adverts separately', async () => {
+  const branch = fixture()
+  branch.listings = [
+    { id: 'internal-active', branch_id: branch.id, listing_status: 'active', websitePublication: { status: 'unpublished' } },
+    { id: 'under-offer', branch_id: branch.id, listing_status: 'under_offer' },
+    { id: 'legacy-active', branch_id: branch.id, listing_status: 'listing_active' },
+    { id: 'withdrawn', branch_id: branch.id, listing_status: 'withdrawn' },
+    { id: 'inactive', branch_id: branch.id, listing_status: 'inactive' },
+  ]
+  api.branch.mockResolvedValue(branch)
+  show('listings')
+  const card = (await screen.findByRole('heading', { name: 'internal-active' })).closest('article')
+  expect(within(card).getByText('Listing: Active')).toBeTruthy()
+  expect(within(card).getByText('Website: Removed')).toBeTruthy()
+  const filter = screen.getByRole('combobox', { name: '' })
+  fireEvent.change(filter, { target: { value: 'active' } })
+  expect(screen.getByText(/Showing 3 of 5 listings/)).toBeTruthy()
+  expect(screen.queryByRole('heading', { name: 'inactive' })).toBeNull()
+  fireEvent.change(filter, { target: { value: 'withdrawn' } })
+  expect(screen.getByRole('heading', { name: 'withdrawn' })).toBeTruthy()
+  expect(screen.getByText(/Showing 1 of 5 listings/)).toBeTruthy()
 })
 it('uses the original when a thumbnail fails, and can renew a failed photo without opening the listing', async () => {
   api.covers.mockResolvedValueOnce({ sale: 'https://photos.test/thumbnail.jpg' }).mockResolvedValueOnce({ sale: 'https://photos.test/renewed.jpg' })
@@ -101,6 +137,28 @@ it('does not request listing photos on other branch tabs', async () => {
   show()
   await screen.findByRole('heading',{name:'Owner One'})
   expect(api.covers).not.toHaveBeenCalled()
+})
+it('shows branch deals, separates pending totals and opens the selected transaction', async () => {
+  const branch = fixture()
+  branch.transactions = [
+    ...['otp-one', 'otp-two'].map(id => ({ id, assigned_branch_id: branch.id, assigned_agent_email: 'owner@example.test', current_main_stage: 'OTP', stage: 'OTP Signed', lifecycle_state: 'active', property_address_line_1: id })),
+    ...['pending-one', 'pending-two'].map(id => ({ id, assigned_branch_id: branch.id, current_main_stage: 'AVAIL', stage: 'Available', lifecycle_state: 'active', property_address_line_1: id })),
+    { id: 'synthetic', is_demo_data: true, current_main_stage: 'FIN', property_address_line_1: 'synthetic' },
+  ]
+  api.branch.mockResolvedValue(branch)
+  show('transactions')
+  await screen.findByText(/2 active deals · 2 awaiting onboarding or review/)
+  expect(screen.queryByText('No transactions yet')).toBeNull()
+  expect(screen.queryByText('synthetic')).toBeNull()
+  expect(screen.getByText('pending-one')).toBeTruthy()
+  fireEvent.click(screen.getByText('otp-one'))
+  expect(screen.getByTestId('route').textContent).toBe('/transactions/otp-one')
+})
+it('does not present a failed branch transaction read as an empty workspace', async () => {
+  api.branch.mockResolvedValue({ ...fixture(), transactions: [], dataAvailability: { transactions: false } })
+  show('transactions')
+  expect((await screen.findByRole('alert')).textContent).toContain('Branch transactions could not be loaded')
+  expect(screen.queryByText('No transactions yet')).toBeNull()
 })
 it('discards an old cover response after leaving the tab and requesting fresh photos', async () => {
   let finishOld

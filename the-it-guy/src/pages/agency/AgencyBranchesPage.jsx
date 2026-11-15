@@ -840,6 +840,9 @@ export default function AgencyBranchesPage() {
               <PerformanceMetric label="Active team" value={formatNumber(overview.totals.activeTeam)} activityLabel={`${formatNumber(periodMetrics.team?.value)} joined ${activityPeriod} · Includes owners, principals and staff`} currentActivity={periodMetrics.team?.value} previousActivity={periodMetrics.team?.previousValue} changePercent={periodMetrics.team?.changePercent} sparkline={periodMetrics.team?.sparkline} tone="slate" />
             </div>
             {overview.totals.unassignedListings > 0 ? <p className="mt-3 text-xs text-[#64748b]">{overview.totals.unassignedListings} current listing{overview.totals.unassignedListings === 1 ? '' : 's'} awaiting branch allocation included in these totals.</p> : null}
+            {overview.totals.unassignedTransactions > 0 ? <p className="mt-3 text-xs text-[#64748b]">{overview.totals.unassignedTransactions} active transaction{overview.totals.unassignedTransactions === 1 ? '' : 's'} awaiting branch allocation included in company totals. Branch cards show allocated records only.</p> : null}
+            {overview.totals.transactionsAwaitingReview > 0 ? <p className="mt-3 text-xs text-[#64748b]">{overview.totals.transactionsAwaitingReview} transaction record{overview.totals.transactionsAwaitingReview === 1 ? '' : 's'} awaiting onboarding or review. These are excluded from active transaction totals.</p> : null}
+            {overview.totals.commissionSnapshotsNeedingReview > 0 ? <p className="mt-3 text-xs text-[#996215]">{overview.totals.commissionSnapshotsNeedingReview} saved commission record{overview.totals.commissionSnapshotsNeedingReview === 1 ? '' : 's'} based on an older sale price. Saved amounts are preserved pending review.</p> : null}
           </section>
 
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">

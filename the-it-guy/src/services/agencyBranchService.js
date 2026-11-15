@@ -1,4 +1,5 @@
 import { calculateBranchLeadConversion, resolveBranchReportingRange } from './branchDashboardModel'
+import { isDashboardTransactionActive, isDashboardTransactionAwaitingReview } from '../lib/dashboardTransactionIntegrity'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { hasOpenAgencyOperations } from '../lib/agencyOperationsAccess'
 import { buildRoleHeadcount, isActiveReportingUser } from '../lib/reportingRoleLogic'
@@ -26,7 +27,6 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const TERMINAL_TRANSACTION_STATUSES = new Set(['registered', 'cancelled', 'canceled', 'archived', 'completed'])
 const INACTIVE_LISTING_STATUSES = new Set(['withdrawn', 'sold', 'archived', 'cancelled', 'canceled', 'completed', 'inactive'])
 
 function clampPercent(value) {
@@ -47,14 +47,8 @@ function getTransactionBranchId(row = {}) {
   return normalizeText(row?.assigned_branch_id || row?.branch_id || row?.branchId || row?.assignedBranchId)
 }
 
-function getTransactionStatus(row = {}) {
-  return normalizeLower(row?.lifecycle_state || row?.stage || row?.status)
-}
-
 function isActiveTransaction(row = {}) {
-  if (row?.registered_at || row?.registeredAt) return false
-  const status = getTransactionStatus(row)
-  return !TERMINAL_TRANSACTION_STATUSES.has(status)
+  return row?.is_demo_data !== true && isDashboardTransactionActive(row)
 }
 
 function isActiveListing(row = {}) {
@@ -96,6 +90,13 @@ function getCommissionPercent(row = {}) {
 }
 
 function getProjectedCommission(row = {}, value = 0) {
+  const snapshot = row.commissionSnapshot
+  if (snapshot) {
+    const gross = snapshot.gross_commission_amount
+    if (gross !== null && gross !== undefined && gross !== '' && Number.isFinite(Number(gross))) return { value: Number(gross), hasData: true }
+  }
+  if (row.commissionReadUnavailable) return { value: 0, hasData: false }
+  if (row.gross_commission_amount !== null && row.gross_commission_amount !== undefined && row.gross_commission_amount !== '' && Number.isFinite(Number(row.gross_commission_amount))) return { value: Number(row.gross_commission_amount), hasData: true }
   const storedValue = getStoredCommissionValue(row)
   if (storedValue > 0) {
     return { value: storedValue, hasData: true }
@@ -107,6 +108,15 @@ function getProjectedCommission(row = {}, value = 0) {
   }
 
   return { value: 0, hasData: false }
+}
+
+function attachCommissionSnapshots(transactions, snapshots = [], available = true) {
+  const latest = new Map()
+  for (const snapshot of snapshots) {
+    const prior = latest.get(snapshot.transaction_id)
+    if (!prior || new Date(snapshot.updated_at || snapshot.created_at || 0) >= new Date(prior.updated_at || prior.created_at || 0)) latest.set(snapshot.transaction_id, snapshot)
+  }
+  return transactions.map(row => ({ ...row, commissionSnapshot: latest.get(row.id) || null, commissionReadUnavailable: !available }))
 }
 
 function isSchemaMismatchError(error) {
@@ -312,10 +322,10 @@ async function listOrganisationUsers(client, organisationId) {
 
 async function listOrganisationTransactions(client, organisationId) {
   const selectAttempts = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, compliance_status, compliance_review_required, documents_complete, documents_missing, required_documents_missing, missing_documents_count, created_at, updated_at',
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
-    'id, organisation_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+    'id, organisation_id, current_main_stage, is_demo_data, is_active, deleted_at, archived_at, cancelled_at, completed_at, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, compliance_status, compliance_review_required, documents_complete, documents_missing, required_documents_missing, missing_documents_count, created_at, updated_at',
+    'id, organisation_id, current_main_stage, is_demo_data, is_active, deleted_at, archived_at, cancelled_at, completed_at, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
+    'id, organisation_id, current_main_stage, is_demo_data, is_active, deleted_at, archived_at, cancelled_at, completed_at, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
+    'id, organisation_id, current_main_stage, is_demo_data, is_active, deleted_at, archived_at, cancelled_at, completed_at, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
   ]
 
   let lastError
@@ -374,8 +384,8 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const activeMembers = headcount.activeOperationalUsers
   const activeSalesAgents = headcount.activeAgents
   const activeOperationalTeam = headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers
-  const branchTransactions = transactions.filter((row) => getTransactionBranchId(row) === normalizeText(branch?.id))
-  const branchListings = listings.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id) && normalizeLower(row?.listing_status) !== 'withdrawn')
+  const branchTransactions = transactions.filter((row) => row?.is_demo_data !== true && getTransactionBranchId(row) === normalizeText(branch?.id))
+  const branchListings = listings.filter((row) => row?.is_demo_data !== true && normalizeText(row?.branch_id) === normalizeText(branch?.id))
   const branchLeads = leads.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
 
   const activeTransactions = branchTransactions.filter(isActiveTransaction)
@@ -384,15 +394,15 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const activeListingRows = branchListings.filter(isActiveListing)
   const activeListingPipeline = activeListingRows.reduce((sum, row) => sum + getListingValue(row), 0)
   const activeTransactionPipeline = activeTransactions.reduce((sum, row) => sum + getTransactionValue(row), 0)
-  const pipelineValue = activeListingPipeline + activeTransactionPipeline
+  const pipelineValue = activeTransactionPipeline
 
-  const projectedCommission = [...activeListingRows, ...activeTransactions].reduce((summary, row) => {
+  const projectedCommission = activeTransactions.reduce((summary, row) => {
     const sourceValue = branchTransactions.includes(row) ? getTransactionValue(row) : getListingValue(row)
     const commission = getProjectedCommission(row, sourceValue)
     summary.value += commission.value
-    summary.hasData = summary.hasData || commission.hasData
+    summary.hasData = summary.hasData && commission.hasData
     return summary
-  }, { value: 0, hasData: false })
+  }, { value: 0, hasData: true })
 
   const conversionRate = calculateBranchLeadConversion(branchLeads, branchTransactions, [], resolveBranchReportingRange()).value
 
@@ -475,13 +485,15 @@ async function loadAgencyBranchSource(expectedOrganisationId = '') {
   assertBranchOperationalAccess(context, 'view branch operations')
   const { organisationId } = context
   if (expectedOrganisationId && expectedOrganisationId !== organisationId) throw new Error('Company overview does not match the selected organisation.')
-  const [branches, members, transactions, listings, leads] = await Promise.all([
+  const [branches, members, rawTransactions, listings, leads, commissionResult] = await Promise.all([
     listOrganisationBranches(supabase, organisationId),
     listOrganisationUsers(supabase, organisationId),
     listOrganisationTransactions(supabase, organisationId),
     listOrganisationPrivateListings(supabase, organisationId),
     listOrganisationLeads(supabase, organisationId),
+    readOrganisationRows(supabase, 'transaction_commissions', organisationId, 'id, transaction_id, sale_price, gross_commission_amount, updated_at, created_at'),
   ])
+  const transactions = attachCommissionSnapshots(rawTransactions, commissionResult.data || [], !commissionResult.error)
 
   const membersByBranchId = new Map()
   for (const member of members) {
@@ -1005,16 +1017,16 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
   const activeBranchRows = branchRows.filter((branch) => branch?.isActive !== false)
   const uniqueRows = (rows, identity) => [...new Map(rows.map((row, index) => [normalizeText(identity(row)) || `row:${index}`, row])).values()]
   const allListings = uniqueRows(records?.listings || branchRows.flatMap((branch) => branch.listings || []), (row) => row.id)
-  const allTransactions = uniqueRows(records?.transactions || branchRows.flatMap((branch) => branch.transactions || []), (row) => row.id)
+  const allTransactions = uniqueRows(records?.transactions || branchRows.flatMap((branch) => branch.transactions || []), (row) => row.id).filter((row) => row?.is_demo_data !== true)
   const members = uniqueRows(records?.members || branchRows.flatMap((branch) => branch.members || []), (row) => row.user_id || row.id || row.email)
   const listings = allListings.filter(isActiveListing).map((row) => ({ ...row, overviewValue: getListingValue(row) }))
   const transactions = allTransactions.filter(isActiveTransaction).map((row) => ({ ...row, overviewValue: getTransactionValue(row) }))
-  const pipelineRecords = [...listings, ...transactions]
+  const pipelineRecords = transactions
   const companyPipeline = pipelineRecords.reduce((sum, row) => sum + row.overviewValue, 0)
   const commission = pipelineRecords.reduce((result, row) => {
     const value = getProjectedCommission(row, row.overviewValue)
-    return { value: result.value + value.value, hasData: result.hasData || value.hasData }
-  }, { value: 0, hasData: false })
+    return { value: result.value + value.value, hasData: result.hasData && value.hasData }
+  }, { value: 0, hasData: true })
   const headcount = buildRoleHeadcount(members)
   const activeSalesAgents = headcount.activeAgents
   const activeOperationalTeam = headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers
@@ -1031,8 +1043,11 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
       activeTeam: headcount.activeOperationalUsers,
       activeListings: listings.length,
       unassignedListings: listings.filter((row) => !normalizeText(row.branch_id)).length,
+      unassignedTransactions: transactions.filter((row) => !getTransactionBranchId(row)).length,
       companyPipeline,
       activeTransactions,
+      transactionsAwaitingReview: allTransactions.filter((row) => isDashboardTransactionAwaitingReview(row)).length,
+      commissionSnapshotsNeedingReview: transactions.filter(row => row.commissionSnapshot?.sale_price != null && Number(row.commissionSnapshot.sale_price) !== row.overviewValue).length,
       projectedCommission,
       hasProjectedCommissionData,
       companyHealth: calculateCompanyHealth(branchRows),
@@ -1079,6 +1094,7 @@ export const __agencyBranchServiceTestUtils = {
   readOrganisationRows,
   listOrganisationPrivateListings,
   listOrganisationTransactions,
+  attachCommissionSnapshots,
 }
 
 export async function inviteBranchMember(payload = {}) {

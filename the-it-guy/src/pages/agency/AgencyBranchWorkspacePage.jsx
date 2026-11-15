@@ -28,6 +28,8 @@ import BranchExecutiveOverview, { BranchOverviewSkeleton } from '../../component
 import BranchCoverImage from '../../components/agency/BranchCoverImage'
 import BranchFicTraining from '../../components/agency/BranchFicTraining'
 import BranchTopPerformers from '../../components/agency/BranchTopPerformers'
+import { getPrivateListingLifecycleState, getPrivateListingStatusLabel } from '../../lib/privateListingLifecycle'
+import { isDashboardTransactionAwaitingReview } from '../../lib/dashboardTransactionIntegrity'
 import AgentTransactionsTable from '../../components/AgentTransactionsTable'
 import { LeadSourceBrand, PropertyThumbnail, StagePill } from './LeadListPage'
 import { getPropertyImageUrl } from './agencyLeadListModel'
@@ -56,7 +58,7 @@ import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../serv
 import { updateBranch } from '../../services/agencyBranchService'
 import { getBranchDashboardData } from '../../services/branchDashboardDataService'
 import { getPrivateListingCoverImageUrls, getListingCardImageSource } from '../../services/privateListingService'
-import { buildBranchDashboard, BRANCH_REPORTING_PERIODS, isOpenBranchTransaction } from '../../services/branchDashboardModel'
+import { buildBranchDashboard, BRANCH_REPORTING_PERIODS, isActiveBranchListing, isOpenBranchTransaction } from '../../services/branchDashboardModel'
 import { buildBranchWorkspacePerformance } from '../../services/branchWorkspacePerformanceService'
 
 const TABS = [
@@ -378,7 +380,11 @@ function BranchListingImage({ source = {}, alt, onRetry }) {
 
 function BranchListingCard({ listing, imageSource, photoRevision = 0, onRetryPhoto, onOpen, assignedAgentName, canViewFinancials = false }) {
   const title = listing.listing_title || listing.title || listing.formatted_address || listing.id
-  const status = listing.listing_status || listing.stage || 'Active'
+  const rawStatus = normalizeLower(listing.listing_status || listing.stage)
+  const status = ['inactive', 'archived', 'expired', 'deleted', 'let', 'rented', 'leased', 'cancelled', 'canceled'].includes(rawStatus)
+    ? formatRoleLabel(rawStatus) : getPrivateListingStatusLabel(getPrivateListingLifecycleState(listing))
+  const websiteStatus = listing.websitePublication?.status
+  const websiteLabel = websiteStatus === 'published' ? 'Published' : websiteStatus === 'unpublished' ? 'Removed' : websiteStatus === 'not_published' ? 'Not published' : 'Status unavailable'
   const statusKey = normalizeLower(status)
   const statusDotClass = statusKey.includes('sold') ? 'bg-[#60758b]' : statusKey.includes('offer') ? 'bg-[#d79d32]' : statusKey.includes('withdrawn') ? 'bg-[#c65b51]' : 'bg-[#39a269]'
   const agentName = assignedAgentName(listing)
@@ -390,7 +396,8 @@ function BranchListingCard({ listing, imageSource, photoRevision = 0, onRetryPho
       <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]"><BranchListingImage key={`${source.src || ''}:${source.fallbackSrc || ''}:${photoRevision}`} source={source} alt={title} onRetry={onRetryPhoto} /><div className="pointer-events-none absolute left-3 top-3 inline-flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur"><span className={`h-2 w-2 rounded-full ${statusDotClass}`} /><span className="truncate">{formatRoleLabel(status)}</span></div></div>
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div><h3 className="truncate text-[1.02rem] font-semibold leading-6 text-[#142132]" title={title}>{title}</h3><p className="mt-1 truncate text-sm text-[#60758b]">{location}</p><p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{canViewFinancials ? formatCurrency(listing.asking_price || listing.estimated_value || 0) : 'Price restricted'}</p></div>
-        <div className="grid grid-cols-2 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]"><span className="truncate">{formatRoleLabel(status)}</span><span className="truncate">Updated {formatDateShort(listing.updated_at || listing.created_at)}</span></div>
+        <div className="grid grid-cols-2 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]"><span className="truncate">Listing: {status}</span><span className="truncate">Updated {formatDateShort(listing.updated_at || listing.created_at)}</span></div>
+        <p className="text-xs text-[#60758b]">Website: {websiteLabel}</p>
         <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-[#eef3f8] pt-3"><span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d7e2ee] bg-[#eef4fa] text-[0.72rem] font-bold text-[#1f4f78]">{getInitials(agentName)}</span><div className="min-w-0"><p className="truncate text-[0.84rem] font-semibold text-[#20364d]">{agentName}</p><p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">Assigned agent</p></div></div>
         <button type="button" onClick={(event) => { event.stopPropagation(); onOpen() }} className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"><span className="truncate">Open</span><ArrowRight size={14} className="shrink-0" /></button>
       </div>
@@ -1173,10 +1180,10 @@ export default function AgencyBranchWorkspacePage() {
   }, [leadAgentNames])
 
   const filteredListings = useMemo(() => branchListings.filter((listing) => {
-    const status = normalizeLower(listing.listing_status || listing.stage || 'active')
+    const status = getPrivateListingLifecycleState(listing)
     const haystack = normalizeLower(`${listing.listing_title || listing.title || ''} ${listing.assigned_agent_name || listing.assigned_agent_email || ''}`)
     return (!listingSearch || haystack.includes(listingSearch))
-      && (!listingStatus || status.includes(listingStatus))
+      && (!listingStatus || (listingStatus === 'active' ? isActiveBranchListing(listing) : status === (listingStatus === 'offer' ? 'under_offer' : listingStatus)))
       && (!listingAttention || !normalizeText(listing.assigned_agent_id || listing.assigned_agent_email))
   }), [branchListings, listingAttention, listingSearch, listingStatus])
 
@@ -1206,7 +1213,7 @@ export default function AgencyBranchWorkspacePage() {
       && (!leadAttention || !normalizeText(lead.assigned_agent_id))
   }), [branchLeads, leadAttention, leadSearch, leadStage])
 
-  const branchTransactionRows = useMemo(() => branchTransactions.map((transaction) => ({
+  const branchTransactionRows = useMemo(() => branchTransactions.filter(transaction => transaction.is_demo_data !== true).map((transaction) => ({
     transaction: {
       ...transaction,
       id: transaction.id,
@@ -1323,13 +1330,17 @@ export default function AgencyBranchWorkspacePage() {
                 <select value={searchParams.get('listingStatus') || (searchParams.get('filter') === 'active' ? 'active' : '')} onChange={(event) => updateTabFilters({ listingStatus: event.target.value, filter: '' })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All statuses</option><option value="active">Active</option><option value="offer">Under offer</option><option value="sold">Sold</option><option value="withdrawn">Withdrawn</option></select>
               </div>
             </div>
+            <p role="status" className="text-sm text-[#60758b]">Showing {filteredListings.length} of {branchListings.length} listings. Listing status and website publication are shown separately.</p>
             {listingPhotos.scope === photoScope && listingPhotos.error ? <p role="alert" className="text-sm text-[#a13b35]">{listingPhotos.error} <button type="button" className="underline" onClick={() => setPhotoRetry(value => value + 1)}>Retry photos</button></p> : null}
             {filteredListings.length ? <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filteredListings.map((listing) => <BranchListingCard key={listing.id} listing={listing} imageSource={listingPhotos.scope === photoScope && listingPhotos.urls[listing.id] ? getListingCardImageSource(listingPhotos.urls[listing.id]) : undefined} photoRevision={photoRetry} onRetryPhoto={() => setPhotoRetry(value => value + 1)} canViewFinancials={canViewFinancials} assignedAgentName={getListingAssignedAgent} onOpen={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />)}</div> : <EmptyState title="No listings match these filters" copy="This branch has no visible listings for the selected filters." icon={Building2} />}
           </section>
         ) : null}
 
         {activeTab === 'transactions' ? (
+          branch?.dataAvailability?.transactions === false ? <p role="alert" className="rounded-xl border border-[#e4ebf2] bg-white p-5 text-sm text-[#a13b35]">Branch transactions could not be loaded. Refresh to try again.</p> : <section className="space-y-4">
+          <p role="status" className="text-sm text-[#60758b]">{activeDeals} active deals · {branchTransactions.filter(row => row.is_demo_data !== true && isDashboardTransactionAwaitingReview(row)).length} awaiting onboarding or review. Pending records are excluded from active totals.</p>
           <AgentTransactionsTable rows={branchTransactionRows} title="Transactions" description="Manage the active deals and transaction progress assigned to this branch." isPrincipalView compactLayout searchValue={searchParams.get('transactionSearch') || ''} onSearchChange={(value) => updateTabFilters({ transactionSearch: value })} onRowClick={(row) => navigate(`/transactions/${encodeURIComponent(row.transaction.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />
+          </section>
         ) : null}
 
         {activeTab === 'leads' ? (

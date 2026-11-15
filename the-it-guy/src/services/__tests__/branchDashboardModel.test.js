@@ -17,6 +17,22 @@ try {
     leadActivities: [], commissionSnapshots: [{ transaction_id: 'registered', gross_commission_amount: 60000, agent_commission_amount: 36000, agency_commission_amount: 24000 }], transactionHistory: [],
   }
   const result = build(branch, { now })
+  const kingdom = build({ ...branch, transactions: [
+    transaction('jooste', { sales_price: 1240000, current_main_stage: 'OTP', gross_commission_amount: null, created_at: '2026-09-20' }),
+    transaction('kruger', { sales_price: 1600000, current_main_stage: 'OTP', gross_commission_amount: null, created_at: '2026-09-20' }),
+    transaction('pending-1', { current_main_stage: 'AVAIL', stage: 'Available', created_at: '2026-09-20' }),
+    transaction('pending-2', { current_main_stage: 'AVAIL', stage: 'Available', created_at: '2026-09-20' }),
+    transaction('demo-open', { is_demo_data: true, current_main_stage: 'FIN', created_at: '2026-09-20' }),
+    transaction('demo-registered', { is_demo_data: true, registered_at: '2026-09-20', lifecycle_state: 'registered' }),
+  ], commissionSnapshots: [
+    { transaction_id: 'jooste', gross_commission_amount: 100000 },
+    { transaction_id: 'kruger', gross_commission_amount: 100000 },
+  ] }, { now })
+  assert.equal(kingdom.kpis.find((item) => item.key === 'transactions').value, 2, 'pending onboarding and synthetic deals are not active deals')
+  assert.equal(kingdom.kpis.find((item) => item.key === 'pipeline').value, 2840000)
+  assert.equal(kingdom.kpis.find((item) => item.key === 'commission').value, 200000, 'saved snapshots supply commission even when transaction fields are empty')
+  assert.equal(kingdom.kpis.find((item) => item.key === 'registered').value, 0, 'synthetic registrations do not affect reporting')
+  assert.equal(kingdom.movement.find((item) => item.key === 'transactions').value, 2, 'movement excludes onboarding placeholders and test records')
   const kpi = (key) => result.kpis.find((item) => item.key === key)
   assert.equal(kpi('pipeline').value, 1000000, 'pipeline contains only current open deals')
   assert.equal(kpi('transactions').value, 1)

@@ -30,6 +30,25 @@ try {
   assert.equal(byId.get('principal-user').transactions, 1)
   assert.equal(byId.get('owner-user').commission, 30000, 'earned commission uses registration date and actual agent split')
   assert.equal(result.agents.length, 1, 'staff calculations do not alter leaderboard eligibility')
+  const kingdom = build({ ...branch,
+    listings: [
+      ...Array.from({ length: 17 }, (_, i) => listing(`active-${i}`)),
+      ...Array.from({ length: 4 }, (_, i) => listing(`offer-${i}`, { listing_status: 'under_offer' })),
+      ...Array.from({ length: 2 }, (_, i) => listing(`seller-${i}`, { listing_status: 'seller_lead' })),
+      listing('old-sale', { listing_status: 'sold' }),
+      listing('test-stock', { is_demo_data: true }),
+      ...Array.from({ length: 2 }, (_, i) => listing(`other-${i}`, { assigned_agent_id: 'agent-user' })),
+    ],
+    transactions: [
+      ...['otp-1', 'otp-2'].map(id => deal(id, { assigned_user_id: null, assigned_agent_email: 'OWNER@EXAMPLE.TEST', current_main_stage: 'OTP', stage: 'OTP Signed' })),
+      ...['pending-1', 'pending-2'].map(id => deal(id, { current_main_stage: 'AVAIL', stage: 'Available' })),
+      deal('test-deal', { is_demo_data: true, current_main_stage: 'FIN' }),
+    ],
+  }, { now })
+  const ownerWorkload = kingdom.staff.find(row => row.id === 'owner-user')
+  assert.equal(ownerWorkload.listings, 23, 'full allocated stock includes seller leads and under-offer listings, excludes sold and synthetic stock')
+  assert.equal(ownerWorkload.transactions, 2, 'legacy email assignments count for owners without including onboarding placeholders or test deals')
+  assert.equal(kingdom.staff.find(row => row.id === 'agent-user').listings, 2, 'another member keeps their own allocations')
   const previous = build(branch, { now, period: 'last_month' })
   for (const member of members) {
     const old = previous.staff.find((row) => row.id === member.user_id)

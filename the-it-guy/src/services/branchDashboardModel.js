@@ -2,6 +2,7 @@ import { calculateCommissionAmounts, isCancelledTransaction, isRegisteredTransac
 import { normalizeTransactionLifecycleStage } from '../core/transactions/transactionLifecycle'
 import { getPrivateListingLifecycleState, getPrivateListingStatusLabel } from '../lib/privateListingLifecycle'
 import { getOperationalOwnerKeys, shouldIncludeInAgentLeaderboard } from '../lib/reportingRoleLogic'
+import { isDashboardTransactionAwaitingReview } from '../lib/dashboardTransactionIntegrity'
 
 const DAY = 86400000
 const ZONE = 'Africa/Johannesburg'
@@ -47,12 +48,14 @@ export function resolveBranchReportingRange(period = '30_days', now = new Date()
 }
 
 export function isOpenBranchTransaction(row = {}, now = new Date()) {
+  if (row.is_demo_data === true || row.is_active === false || row.deleted_at || row.archived_at || row.cancelled_at || isDashboardTransactionAwaitingReview(row)) return false
   const status = [row.lifecycle_state, row.status, row.stage, row.current_main_stage].map(key)
   if (isCancelledTransaction(row) || status.some((value) => ['archived', 'deleted', 'rejected', 'lost', 'cancelled', 'canceled'].includes(value))) return false
   const completed = date(row.registered_at || row.completed_at || row.registration_date)
   return !(completed && completed <= now) && !(isRegisteredTransaction(row) && !completed)
 }
 export function branchRegistrationDate(row = {}, now = new Date()) {
+  if (row.is_demo_data === true) return null
   if (isCancelledTransaction(row) || [row.lifecycle_state, row.status, row.stage, row.current_main_stage].map(key).some((value) => ['archived', 'deleted', 'rejected', 'lost', 'cancelled', 'canceled'].includes(value)) || !isRegisteredTransaction(row)) return null
   const completed = date(row.registered_at || row.completed_at || row.registration_date)
   return completed && completed <= now ? completed : null
@@ -82,6 +85,11 @@ function isCurrentStaffListing(row) {
   return visibility !== 'archived'
     && !['sold', 'withdrawn'].includes(getPrivateListingLifecycleState(row))
     && !['sold', 'withdrawn', 'archived', 'cancelled', 'canceled', 'completed', 'inactive', 'deleted', 'expired', 'let', 'rented', 'leased'].includes(status)
+}
+
+export function isActiveBranchListing(row) {
+  return row.is_demo_data !== true && isCurrentStaffListing(row)
+    && ['active', 'under_offer', 'transaction_created'].includes(getPrivateListingLifecycleState(row))
 }
 
 function qualifiedDate(lead, activities) {
@@ -130,7 +138,7 @@ export function buildBranchDashboard(branch = {}, { period = '30_days', now = ne
     return (!organisationId || !row.organisation_id || text(row.organisation_id) === text(organisationId))
       && (!branch.id || !rowBranch || text(rowBranch) === text(branch.id))
   })
-  const listings = scoped(branch.listings, 'branch_id'), leads = scoped(branch.leads, 'branch_id'), transactions = scoped(branch.transactions, 'assigned_branch_id')
+  const listings = scoped(branch.listings, 'branch_id').filter((row) => row.is_demo_data !== true), leads = scoped(branch.leads, 'branch_id'), transactions = scoped(branch.transactions, 'assigned_branch_id').filter((row) => row.is_demo_data !== true && !isDashboardTransactionAwaitingReview(row))
   const members = branch.members || [], activities = branch.leadActivities || []
   const available = (source) => branch.dataAvailability?.[source] ?? Array.isArray(branch[source])
   const transactionIds = unique(transactions, (row) => text(row.id)), leadIds = unique(leads, (row) => text(row.lead_id)), listingIds = unique(listings, (row) => text(row.id))
@@ -164,7 +172,7 @@ export function buildBranchDashboard(branch = {}, { period = '30_days', now = ne
   const kpis = [
     { key: 'pipeline', label: 'Pipeline Value', value: available('transactions') ? completeSum(open, branchTransactionValue) : null, currency: true, context: 'Current open deals', change: null },
     { key: 'transactions', label: 'Active Deals', value: available('transactions') ? open.length : null, context: 'Current open deals', change: null },
-    { key: 'commission', label: 'Projected Commission', value: available('transactions') ? completeSum(open, (row) => amounts(row).gross) : null, currency: true, context: 'Expected gross commission', change: null },
+    { key: 'commission', label: 'Projected Commission', value: available('transactions') ? completeSum(open, (row) => amounts(row).gross) : null, currency: true, context: open.some(row => snapshots.get(text(row.id))?.sale_price != null && numeric(snapshots.get(text(row.id)).sale_price) !== branchTransactionValue(row)) ? 'Saved amounts; price basis needs review' : 'Expected gross commission', change: null },
     { key: 'registered', label: 'Registered', value: registrationCount(range), context: range.label, change: change(registrationCount(range), registrationCount(previousRange(range))) },
     { key: 'conversion', label: 'Conversion Rate', value: available('leads') && available('transactions') ? conversion.value : null, percent: true, context: 'Qualified lead cohort', change: conversion.value !== null && previousConversion.value !== null ? Math.round((conversion.value - previousConversion.value) * 10) / 10 : null, changeUnit: 'pp' },
   ]
@@ -214,7 +222,7 @@ export function buildBranchDashboard(branch = {}, { period = '30_days', now = ne
   const periodRegisteredRows = registeredRows.filter((row) => inside(branchRegistrationDate(row, now), range))
   const periodFinancials = { gross: available('transactions') ? completeSum(periodRegisteredRows, (row) => amounts(row).gross) : null }
   const financials = Object.fromEntries(['sales', 'gross', 'agency', 'agent'].map((metric) => [metric, financeBuckets.every((bucket) => bucket[metric] !== null) ? sum(financeBuckets, (bucket) => bucket[metric]) : null]))
-  const activeListings = listings.filter((row) => ['active', 'under_offer', 'transaction_created'].includes(getPrivateListingLifecycleState(row)))
+  const activeListings = listings.filter(isActiveBranchListing)
   const listingDate = (row) => date(row.published_at || row.listed_at || row.created_at)
   const ages = activeListings.map((row) => listingDate(row) ? Math.max(0, Math.floor((now - listingDate(row)) / DAY)) : null)
   const portfolioStatuses = [...new Set(listings.map((row) => getPrivateListingLifecycleState(row)))].map((state) => ({ key: state, label: getPrivateListingStatusLabel(state), count: listings.filter((row) => getPrivateListingLifecycleState(row) === state).length }))

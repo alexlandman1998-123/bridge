@@ -25,7 +25,7 @@ export default function SellerDocumentWorkflowActions({ item, copy, request, bus
         {copy ? 'Upload signed copy' : 'Upload existing signed copy'}
         <input type="file" className="sr-only" aria-label={`Upload manually ${item?.label || copy?.name || 'seller document'}`} accept={accept} disabled={busy} onChange={onUpload} />
       </label> : null}
-      {workflow.canReview ? <button type="button" className={buttonClass} disabled={busy} onClick={onReview}>Review signed copy</button> : null}
+      {workflow.canReview ? <button type="button" className={buttonClass} disabled={busy} onClick={onReview}>Review document</button> : null}
       {workflow.canRefresh ? <button type="button" className={buttonClass} disabled={busy} onClick={onRefresh}>Refresh signing status</button> : null}
     </div>
     {!onlineEnabled && workflow.canSend ? <p className="text-xs text-[#607387]">Online signing is currently unavailable.</p> : null}

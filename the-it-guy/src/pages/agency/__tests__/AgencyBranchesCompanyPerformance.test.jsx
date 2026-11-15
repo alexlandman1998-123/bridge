@@ -41,6 +41,18 @@ it('changes activity period while preserving current totals', async () => {
   await screen.findByText('2 added last month')
   expect(card('Current listings').getByText('5')).toBeTruthy()
 })
+it('separates pending onboarding records from the active company total', async () => {
+  api.getOverview.mockImplementation(async () => {
+    const value = overview()
+    value.totals.activeTransactions = 2
+    value.totals.transactionsAwaitingReview = 2
+    return value
+  })
+  render(<Page />)
+  await screen.findByText('Company Performance')
+  expect(card('Active transactions').getByText('2')).toBeTruthy()
+  expect(screen.getByText(/2 transaction records awaiting onboarding or review/)).toBeTruthy()
+})
 it('shows a retryable error without false zero figures on an initial failed load', async () => {
   api.getOverview.mockRejectedValueOnce(new Error('Unable to read listings'))
   render(<Page />)

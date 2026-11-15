@@ -213,7 +213,7 @@ function buildModel(overrides = {}) {
   const model = buildModel()
   assert.equal(model.kpis.totalAgents, 2, 'principal scope excludes inactive and other agencies by default')
   assert.deepEqual(model.agentsTable.map((row) => row.id).sort(), ['agent-a', 'agent-b'])
-  assert.equal(model.kpis.pipelineValue, 6600000, 'pipeline value comes only from visible scoped agents')
+  assert.equal(model.kpis.pipelineValue, 2500000, 'Active deal value excludes listing stock and lead estimates')
 }
 
 {
@@ -251,7 +251,7 @@ function buildModel(overrides = {}) {
   assert.equal(agentA?.performance.activeTransactionCount, 1, 'card active transaction count comes from assigned active transactions')
   assert.equal(agentA?.performance.activeListingCount, 1, 'card active listing count comes from assigned listings')
   assert.equal(agentA?.performance.stageCounts.otp, 1, 'card transaction progress receives active stage counts')
-  assert.equal(agentA?.performance.pipelineValue, 5500000, 'card pipeline value combines active transaction and listing value for the visible agent')
+  assert.equal(agentA?.performance.pipelineValue, 2500000, 'Active deal value excludes listing stock and lead estimates')
 }
 
 {
@@ -303,7 +303,7 @@ function buildModel(overrides = {}) {
     now: rangeNow,
   })
   const agentsPagePipeline = agentsPageModel.agentsTable[0]?.performance.pipelineValue
-  assert.equal(agentsPagePipeline, 4600000, 'agents page pipeline should include current open lead and listing value')
+  assert.equal(agentsPagePipeline, 0, 'Active deal value excludes listing stock and lead estimates')
   assert.equal(detailModel.pipelineHealth.pipelineValue, agentsPagePipeline, 'agent detail pipeline should not drop open lead value because it uses month-to-date metrics')
 }
 
@@ -343,7 +343,7 @@ function buildModel(overrides = {}) {
   })
   const leroy = model.agentsTable.find((row) => row.id === 'membership-leroy')
   assert.equal(leroy?.performance.activeListingCount, 1, 'agent performance should match private listings assigned to the auth user id alias')
-  assert.equal(leroy?.performance.pipelineValue, 1674800, 'pipeline value should include private listing value matched by auth user id alias')
+  assert.equal(leroy?.performance.pipelineValue, 0, 'Active deal value excludes listing stock and lead estimates')
 }
 
 {
@@ -392,7 +392,7 @@ function buildModel(overrides = {}) {
     ],
   })
   assert.equal(leroyDetail?.pipelineHealth.activeDeals, 1, 'agent detail should match active transactions assigned to the auth user id alias')
-  assert.equal(leroyDetail?.pipelineHealth.pipelineValue, 3924800, 'agent detail should include lead, transaction, and listing pipeline matched by alias')
+  assert.equal(leroyDetail?.pipelineHealth.pipelineValue, 2000000, 'Active deal value excludes listing stock and lead estimates')
   assert.equal(
     leroyDetail?.monthlyPerformance.metrics.find((metric) => metric.key === 'mandatesWon')?.value,
     1,
@@ -460,7 +460,7 @@ function buildModel(overrides = {}) {
   })
   const detailMetrics = new Map(detailModel.monthlyPerformance.metrics.map((metric) => [metric.key, metric]))
   assert.equal(detailModel.pipelineHealth.activeDeals, 1, 'detail workspace active deals come from scoped active transactions')
-  assert.equal(detailModel.pipelineHealth.pipelineValue, 4500000, 'detail workspace pipeline value uses active transactions plus active listings')
+  assert.equal(detailModel.pipelineHealth.pipelineValue, 3000000, 'Active deal value excludes listing stock and lead estimates')
   assert.equal(detailMetrics.get('conversionRate')?.value, 50, 'detail performance conversion rate comes from assigned leads')
   assert.equal(detailMetrics.get('commissionGenerated')?.value, 60000, 'detail performance commission uses registered transaction commission')
   assert.equal(detailMetrics.get('avgDaysToRegistration')?.value, 10, 'detail performance exposes real average days to registration')
@@ -633,7 +633,7 @@ function buildModel(overrides = {}) {
   const pullThroughRow = topLevelModel.agentsTable[0]
   assert.equal(topLevelModel.kpis.activeToday, 1, 'main command centre should count residential canvassing conversion work in active-today KPI')
   assert.equal(pullThroughRow?.performance.totalLeads, 1, 'converted canvassing lead should pull through to principal performance lead count')
-  assert.equal(pullThroughRow?.performance.pipelineValue, 2100000, 'converted canvassing lead value should pull through to principal pipeline value')
+  assert.equal(pullThroughRow?.performance.pipelineValue, 0, 'Active deal value excludes listing stock and lead estimates')
   assert.equal(pullThroughRow?.performance.activityVolume, 3, 'lead and canvassing conversion activities should pull through without double-counting duplicate rows')
   assert.equal(topLevelModel.topPerformers[0]?.movement, 3, 'top performer movement should include residential canvassing activity')
   assert.equal(topLevelModel.analytics.activityHeatmap.find((row) => row.type === 'calls')?.days.find((day) => day.day === 'Sun')?.value, 1, 'main command centre heatmap should include residential canvassing calls once')
@@ -733,7 +733,7 @@ function buildModel(overrides = {}) {
     ],
   })
   const detailMetrics = new Map(detailModel.monthlyPerformance.metrics.map((metric) => [metric.key, metric]))
-  assert.equal(detailMetrics.get('commissionGenerated')?.value, 60000, 'detail performance estimates commission from registered value when no explicit commission exists')
+  assert.equal(detailMetrics.get('commissionGenerated')?.value, null, 'unknown commission must not be replaced with an invented 3 percent amount')
 }
 
 {
@@ -751,6 +751,45 @@ function buildModel(overrides = {}) {
     tasks: [],
   })
   assert.equal(model.branchPerformance[0].name, 'Current Office', 'fallback branch card renders when no branch data exists')
+}
+
+{
+  const model = getPrincipalAgentCommandCentre({
+    organisationId: 'kingdom',
+    agents: [{ id: 'kevin-member', user_id: 'kevin-user', email: 'kevin@example.test', name: 'Kevin', organisationId: 'kingdom', status: 'active' }, { id: 'esmerie-member', user_id: 'esmerie-user', email: 'esmerie@example.test', name: 'Esmerie', organisationId: 'kingdom', status: 'active' }],
+    transactions: [
+      { transaction: { id: 'otp-one', assigned_agent_email: 'KEVIN@EXAMPLE.TEST', sales_price: 1240000, current_main_stage: 'OTP', stage: 'OTP Signed' } },
+      { transaction: { id: 'otp-two', assigned_user_id: 'kevin-user', assigned_agent_email: 'esmerie@example.test', created_by: 'esmerie-user', sales_price: 1600000, current_main_stage: 'OTP', stage: 'OTP Signed' } },
+      { transaction: { id: 'pending', assigned_agent_email: 'kevin@example.test', sales_price: 875000, current_main_stage: 'AVAIL', stage: 'Available' } },
+      { transaction: { id: 'test', assigned_agent_email: 'kevin@example.test', sales_price: 1000000, current_main_stage: 'FIN', is_demo_data: true } },
+    ],
+    listings: [{ id: 'stock', assigned_agent_id: 'kevin-user', asking_price: 40000000, status: 'active' }, { id: 'qa-stock', assigned_agent_id: 'kevin-user', asking_price: 1000000, status: 'active', is_demo_data: true }],
+    leads: [{ id: 'mandate', assignedAgentId: 'kevin-user', status: 'Mandate signed', budget: 9000000 }],
+  })
+  const kevin = model.agentsTable.find(row => row.id === 'kevin-member')
+  assert.equal(model.kpis.pipelineValue, 2840000)
+  assert.equal(model.kpis.transactions, 2)
+  assert.equal(kevin.performance.activeTransactionCount, 2)
+  assert.equal(kevin.performance.stageCounts.otp, 2)
+  assert.equal(kevin.performance.listings, 1)
+  assert.equal(kevin.performance.conversionRate, 0, 'a signed mandate is not a buyer OTP')
+  assert.equal(model.agentsTable.find(row => row.id === 'esmerie-member').performance.activeTransactionCount, 0, 'explicit assigned user beats a stale email and creator')
+  assert.ok(!model.attentionAgents.some(row => row.reasons.includes('Pipeline without active transactions')))
+}
+
+{
+  const result = buildAgentPerformanceModel({
+    agents: [{ id: 'agent' }],
+    leads: [{ id: 'lead-one', assignedAgentId: 'agent', status: 'Mandate signed' }, { id: 'lead-two', assignedAgentId: 'agent', status: 'New' }],
+    transactions: [
+      { transaction: { id: 'finance', assigned_user_id: 'agent', current_main_stage: 'FIN', originating_buyer_lead_id: 'lead-one', sales_price: 1000000 } },
+      { transaction: { id: 'transfer', assigned_user_id: 'agent', current_main_stage: 'TRF', sales_price: 2000000 } },
+    ],
+  })
+  assert.equal(result.agents[0].performance.conversionRate, 50, 'a linked real deal establishes OTP conversion without guessing from a signed mandate')
+  assert.equal(result.agents[0].performance.stageCounts.finance, 1)
+  assert.equal(result.agents[0].performance.stageCounts.transfer, 1)
+  assert.equal(result.agents[0].performance.stageCounts.otp, 0)
 }
 
 console.log('Principal agent command centre selector tests passed')

@@ -7401,6 +7401,13 @@ function AgentListingDetail({ mobile = false } = {}) {
 
   async function handleSellerPortalSigningAction(documentKey, requestId = '') {
     if ((!requestId && !SELLER_PORTAL_SIGNING_ENABLED) || !listingRecord?.id || sellerPortalSigningBusy) return
+    const onboardingStatus = listingRecord?.sellerOnboarding?.status || listingRecord?.sellerOnboardingStatus
+    if (!requestId && onboardingStatus && onboardingStatus !== 'completed') {
+      prepareSellerDocumentAction(documentKey, 'digital_pack')
+      setDetailError('')
+      setDetailMessage('The saved copy is retained. Review the current seller details and confirm approval here to finish preparation and send it.')
+      return
+    }
     setSellerPortalSigningBusy(documentKey)
     setDetailError('')
     try {
@@ -8547,7 +8554,7 @@ function AgentListingDetail({ mobile = false } = {}) {
       const canonicalSaveResult = await saveListingSellerCanonicalUpdate({
         listing: preparationBaseline,
         formPatch: nextFormData,
-        onboardingStatus: preparationBaseline?.sellerOnboarding?.status || preparationBaseline?.sellerOnboardingStatus || 'completed',
+        onboardingStatus: 'completed',
         mutationType: 'seller_signing_pack_preparation',
         source: 'agent_listing_seller_documents',
         organisationId: listingOrganisationId,
@@ -17195,6 +17202,8 @@ function AgentListingDetail({ mobile = false } = {}) {
 
                               <SellerDocumentReviewActions
                                 item={doc}
+                                reviewInDialog
+                                onOpenDocument={() => void handleOpenSellerDocument(doc)}
                                 busyAction={sellerDocumentWorkflowAction}
                                 onReview={handleSellerDocumentReview}
                                 onReminder={handleSellerDocumentReminder}

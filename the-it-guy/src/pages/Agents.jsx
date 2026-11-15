@@ -2678,11 +2678,11 @@ function AgentTransferWizard({
 
 function PerformanceKpiStrip({ kpis, onAttentionClick }) {
   const cards = [
-    { label: 'Total Pipeline Value', value: formatCompactCurrency(kpis.pipelineValue ?? kpis.totalPipelineValue), helper: 'Across visible agents', icon: ArrowRight, tone: 'bg-infoSoft text-info' },
+    { label: 'Total Pipeline Value', value: formatCompactCurrency(kpis.pipelineValue ?? kpis.totalPipelineValue), helper: 'Active deals across visible agents', icon: ArrowRight, tone: 'bg-infoSoft text-info' },
     { label: 'Active Transactions', value: kpis.transactions ?? kpis.activeTransactions ?? 0, helper: 'In-flight deals', icon: BriefcaseBusiness, tone: 'bg-successSoft text-success' },
     { label: 'Avg. Conversion Rate', value: formatConversionRate(kpis.conversionRate ?? kpis.averageConversionRate), helper: 'Leads → OTP', icon: Trophy, tone: 'bg-primarySoft text-primary' },
     { label: 'Avg. Days to Registration', value: kpis.avgDaysToRegistration ?? '—', helper: 'Avg. days', icon: Clock3, tone: 'bg-warningSoft text-warning' },
-    { label: 'Agents Needing Attention', value: kpis.agentsNeedingAttention ?? 0, helper: 'No activity > 7 days', icon: AlertTriangle, tone: 'bg-dangerSoft text-danger', onClick: onAttentionClick },
+    { label: 'Agents Needing Attention', value: kpis.agentsNeedingAttention ?? 0, helper: 'Activity and follow-up warnings', icon: AlertTriangle, tone: 'bg-dangerSoft text-danger', onClick: onAttentionClick },
   ]
 
   return (

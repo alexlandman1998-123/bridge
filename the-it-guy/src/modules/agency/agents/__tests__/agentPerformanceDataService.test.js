@@ -35,6 +35,11 @@ it('reports an unavailable appointment source without claiming a verified empty 
   expect(result.appointmentError).toBe('Attendance read failed')
   expect(result.transactions).toEqual([])
 })
+it('does not replace verified empty remote lists with stale browser records', async () => {
+  const result = await loadAgentPerformanceSources({ canManageDirectory: true, localPrivateListings: [{ id: 'stale-listing' }], localPipelineRows: [{ id: 'stale-lead' }] })
+  expect(result.listings).toEqual([])
+  expect(result.leads).toEqual([])
+})
 
 it('does not gate independent appointment readers on expensive performance hydration', async () => {
   const result = await loadAgentPerformanceSources({ includeAppointments: false })

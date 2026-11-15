@@ -160,6 +160,11 @@ export function buildListingSellerCanonicalUpdate({
   const existingFormData = getExistingFormData(listing)
   const normalizedPatch = object(formPatch)
   const nextFormData = { ...existingFormData, ...normalizedPatch }
+  // Explicit document approval completes the reviewed onboarding. Retaining a
+  // stale draft status makes the signing service reject correctly frozen copies.
+  if (mutationType === 'seller_signing_pack_preparation'
+    && object(normalizedPatch.sellerOnboardingReview || normalizedPatch.seller_onboarding_review).status === 'approved'
+    && object(normalizedPatch.sellerOnboardingFormalPackApproval || normalizedPatch.seller_onboarding_formal_pack_approval).status === 'approved') onboardingStatus = 'completed'
   // An explicit empty value is an edit, not a request to restore a legacy alias.
   for (const aliases of [
     ['email', 'sellerEmail'], ['phone', 'sellerPhone', 'mobile'],

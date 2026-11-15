@@ -66,8 +66,8 @@ export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
 // image, and stage-history fields, so speculative columns here only create a
 // sequential PostgREST retry waterfall before the real query can succeed.
 export const PRINCIPAL_DASHBOARD_TRANSACTION_SELECT_VARIANTS = Object.freeze([
-  'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active',
-  'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+  'id, organisation_id, is_demo_data, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, cash_amount, bond_amount, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+  'id, organisation_id, is_demo_data, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, cash_amount, bond_amount, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, seller_name, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
 ])
 
 // Avatar URLs are enriched from profiles below. Keeping them out of the
@@ -726,7 +726,8 @@ function scopeTransactionsToAgency(rows = [], agencyId = '') {
 }
 
 function getCommissionAmount(row = {}, commissionByTransaction = new Map()) {
-  return toNumber(row.agency_commission_amount || row.gross_commission_amount) || commissionByTransaction.get(normalizeText(row.id)) || 0
+  const recorded = row.agency_commission_amount ?? row.gross_commission_amount
+  return recorded !== null && recorded !== undefined && recorded !== '' ? toNumber(recorded) : commissionByTransaction.get(normalizeText(row.id)) ?? 0
 }
 
 function buildMonthlyRevenueBuckets(transactions = [], range, commissionByTransaction = new Map()) {
@@ -1804,7 +1805,7 @@ async function getPrincipalDashboardDataUncached({
 
   const availableBranches = buildAvailableWorkspaces(organisationBranches)
   const selectedBranchId = getSelectedBranchId(workspaceId, availableBranches)
-  const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId)
+  const allTransactions = scopeTransactionsToAgency(rawTransactions, resolvedAgencyId).filter(row => row.is_demo_data !== true)
   const scopedActorId = normalizeText(actorId).toLowerCase()
   const scopedActorEmail = normalizeText(actorEmail).toLowerCase()
   const matchesActorScope = (row = {}) => {
@@ -1884,8 +1885,8 @@ async function getPrincipalDashboardDataUncached({
     listingOnboardingRows.map((row) => [normalizeText(row.private_listing_id), row]),
   )
   const activeListings = privateListings.filter(isActivePrincipalListing)
-  const pipelineValue = activeListings.reduce((sum, row) => sum + getPrincipalListingPrice(row), 0)
-  const commissionForecast = activeListings.reduce(
+  const listingStockValue = activeListings.reduce((sum, row) => sum + getPrincipalListingPrice(row), 0)
+  const listingStockCommissionForecast = activeListings.reduce(
     (sum, row) => sum + getPrincipalListingCommission(row, listingOnboardingByListingId.get(normalizeText(row.id))),
     0,
   )
@@ -1908,6 +1909,7 @@ async function getPrincipalDashboardDataUncached({
   const scopedDocuments = documents.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const scopedSubprocesses = subprocesses.filter((row) => transactionIds.has(normalizeText(row.transaction_id)))
   const activeTransactions = getScopedDashboardTransactions(transactions, { organisationId: resolvedAgencyId })
+  const pipelineValue = getDashboardPipelineValue(activeTransactions, { organisationId: resolvedAgencyId })
   const awaitingReviewTransactions = getScopedDashboardTransactions(transactions, { organisationId: resolvedAgencyId, activeOnly: false })
     .filter((row) => isDashboardTransactionAwaitingReview(row, { organisationId: resolvedAgencyId }))
   const completedTransactions = transactions.filter((row) => {
@@ -1926,16 +1928,17 @@ async function getPrincipalDashboardDataUncached({
 
   logDashboardPipelineDiagnostics({
     currentOrganisationId: resolvedAgencyId,
-    transactions: activeListings,
+    transactions: activeTransactions,
     pipelineValue,
-    source: 'private_listings',
+    source: 'transactions',
   })
 
   const commissionByTransaction = new Map()
   for (const row of transactionCommissions) {
-    const amount = toNumber(row.agency_commission_amount || row.gross_commission_amount)
-    if (amount > 0) commissionByTransaction.set(normalizeText(row.transaction_id), amount)
+    const amount = row.agency_commission_amount ?? row.gross_commission_amount
+    if (amount !== null && amount !== undefined) commissionByTransaction.set(normalizeText(row.transaction_id), toNumber(amount))
   }
+  const commissionForecast = activeTransactions.reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
   const expectedCommissionTransactions = activeTransactions.filter((row) => {
     const expectedDate = row.expected_transfer_date || row.registration_date
     return expectedDate ? isBetween(expectedDate, range.start, range.end) : true
@@ -2281,6 +2284,8 @@ async function getPrincipalDashboardDataUncached({
     },
     kpis: {
       pipelineValue,
+      listingStockValue,
+      listingStockCommissionForecast,
       activeListings: activeListings.length,
       newLeads: selectedLeads.length,
       commissionForecast,

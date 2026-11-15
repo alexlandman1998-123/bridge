@@ -206,6 +206,23 @@ const listing = {
   },
 }
 
+await test('approved signing preparation completes stale onboarding without losing frozen copies', () => {
+  const pack = { documents: [{ key: 'signed_fica_declaration', versionId: 'fica-version' }, { key: 'signed_disclosure_form', versionId: 'disclosure-version' }] }
+  const update = buildListingSellerCanonicalUpdate({ listing, onboardingStatus: 'in_progress', mutationType: 'seller_signing_pack_preparation', formPatch: {
+    sellerOnboardingReview: { status: 'approved' },
+    sellerOnboardingFormalPackApproval: { status: 'approved' },
+    sellerOnboardingManualSigningPack: pack,
+    sellerReviewedDocumentVersions: pack,
+  } })
+  assert.equal(update.onboardingStatus, 'completed')
+  assert.deepEqual(update.nextFormData.sellerOnboardingManualSigningPack, pack)
+  assert.deepEqual(update.nextFormData.sellerReviewedDocumentVersions, pack)
+  const ordinaryEdit = buildListingSellerCanonicalUpdate({ listing, formPatch: { sellerFirstName: 'Edited' } })
+  assert.equal(ordinaryEdit.onboardingStatus, 'in_progress', 'ordinary edits must not approve onboarding')
+  const notApproved = buildListingSellerCanonicalUpdate({ listing, mutationType: 'seller_signing_pack_preparation', formPatch: { sellerOnboardingReview: { status: 'pending' }, sellerOnboardingFormalPackApproval: { status: 'approved' } } })
+  assert.equal(notApproved.onboardingStatus, 'in_progress', 'both approvals are required')
+})
+
 await test('releases a stalled seller profile save without claiming it failed', async () => {
   await assert.rejects(
     limitSellerCanonicalSaveWait(new Promise(() => {}), 5),
@@ -466,7 +483,7 @@ const leadPageSource = await readFile(new URL('../src/pages/agency/AgencyPipelin
 const leadPreparationAction = leadPageSource.slice(
   leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {'),
   leadPageSource.indexOf('  function handleSellerJourneyAction(', leadPageSource.indexOf('  async function sendSellerLeadSigningPack() {')),
-)
+).replace("import('../../core/documents/sellerOnboardingManualSigningPack')", `import(${JSON.stringify(new URL('../src/core/documents/sellerOnboardingManualSigningPack.js', import.meta.url).href)})`)
 
 async function runLeadPreparation({ mandateType = 'dual', digital = false, saveError = null, warning = null, priorListing = null, askingPrice = '2000000', generatedListing = null, needsRefresh = false, routes = null, sendFailureAt = 0, uploads = [], downloadKey = '', disclosure = null } = {}) {
   const events = { leadPatches: [], downloads: [], tabs: [], saves: [], sends: [], errors: [], listingWrites: [] }
@@ -989,11 +1006,11 @@ const listingPreparationAction = listingActionSource.slice(listingActionSource.i
 const { validateSellerOnboardingFormalSigningSelection } = await import('../src/core/documents/sellerOnboardingFormalSigningPack.js')
 const validLeadPreparation = await runLeadPreparation({ routes: { signed_mandate: 'manual_upload' } })
 const validSnapshot = validLeadPreparation.saves[0].nextFormData.sellerOnboardingManualSigningPack.signingPackSnapshot
-async function runListingPreparation(key, { digital = false, conflict = false, warning = false } = {}) {
+async function runListingPreparation(key, { digital = false, conflict = false, warning = false, onboardingStatus = 'completed' } = {}) {
   const events = { saves: [], sends: [], downloads: [], errors: [], messages: [] }
   const answers = { responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map(question => [question.key, { answer: 'no', note: '' }])) }
   const form = { ...listing.sellerOnboarding.formData, propertyDisclosure: answers, sellerOnboardingReview: { status: 'approved' } }
-  const before = { ...listing, updatedAt: '2026-10-11T10:00:00Z', sellerOnboarding: { ...listing.sellerOnboarding, status: 'completed', formData: form } }
+  const before = { ...listing, updatedAt: '2026-10-11T10:00:00Z', sellerOnboarding: { ...listing.sellerOnboarding, status: onboardingStatus, formData: form } }
   const scope = {
     SELLER_PORTAL_SIGNING_ENABLED: true, sellerMandateSignatureRoute: digital ? 'digital_pack' : 'manual_upload',
     sellerDocumentPreparationNeedsRefresh: false,
@@ -1034,7 +1051,10 @@ async function runListingPreparation(key, { digital = false, conflict = false, w
     updatePrivateListing: () => { throw Error('Document preparation must not make a separate listing write') },
     updatePrivateListingOnboardingFormData: () => { throw Error('Document preparation must use the canonical save') },
     saveCommissionDraft: () => { throw Error('Document preparation must not save commission separately') },
-    sendSellerDocumentForSignature: async (_id, documentKey) => events.sends.push(documentKey),
+    sendSellerDocumentForSignature: async (_id, documentKey) => {
+      assert.equal(events.listing.sellerOnboarding.status, 'completed', 'dispatch must see completed onboarding after the approval save')
+      events.sends.push(documentKey)
+    },
     handleOpenSellerDocument: async copy => events.downloads.push(copy), patchListing: callback => { events.listing = callback(before) },
     setSellerMandateSignatureRoute: () => {}, setSellerDocumentSendSaving: () => {}, setSellerDocumentSendOpen: () => {},
     setMandateReplacementIntent: () => {}, setSellerWorkspaceTab: () => {}, setSellerPortalSigningRequests: () => {},
@@ -1052,6 +1072,13 @@ for (const key of ['mandate', 'disclosure', 'fica']) for (const digital of [fals
   assert.equal(result.saves[0].formPatch.propertyDisclosure.signature, key === 'disclosure' && !digital ? '' : undefined)
   assert.deepEqual(result.sends, digital ? [scopeKey(key)] : [])
   assert.equal(result.downloads.length, digital ? 0 : 1)
+})
+for (const key of ['fica', 'disclosure']) await test(`actual ${key} approval repairs an in-progress onboarding state before dispatch`, async () => {
+  const result = await runListingPreparation(key, { digital: true, onboardingStatus: 'in_progress' })
+  assert.deepEqual(result.errors, [])
+  assert.equal(result.saves[0].onboardingStatus, 'completed')
+  assert.equal(result.listing.sellerOnboarding.status, 'completed')
+  assert.deepEqual(result.sends, [scopeKey(key)])
 })
 const refreshPreparationAction = listingActionSource.slice(listingActionSource.indexOf('  async function refreshSellerDocumentPreparation('), listingActionSource.indexOf('\n  async function handleStartListingMandateDocument(', listingActionSource.indexOf('  async function refreshSellerDocumentPreparation(')))
 const { readSellerMandateTerms: readPrintableTerms } = await import('../src/lib/sellerMandateCapture.js')

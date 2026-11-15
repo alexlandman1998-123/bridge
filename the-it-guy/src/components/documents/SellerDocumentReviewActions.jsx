@@ -14,6 +14,8 @@ function SellerDocumentReviewActions({
   signingRequest = null,
   reviewLabel = 'Start review',
   acceptLabel = 'Approve',
+  reviewInDialog = false,
+  onOpenDocument = null,
 }) {
   const [rejecting, setRejecting] = useState(false)
   const [confirmingSignedCopy, setConfirmingSignedCopy] = useState(false)
@@ -60,12 +62,12 @@ function SellerDocumentReviewActions({
   }
 
   const submitApproval = async () => {
-    if ((requireSignedCopyCheck || requireSignedEvidenceCheck) && !signedCopyChecked) return
+    if ((reviewInDialog || requireSignedCopyCheck || requireSignedEvidenceCheck) && !signedCopyChecked) return
     const reason = requireSignedCopyCheck
       ? isMandate
         ? 'Reviewed the uploaded signed mandate against the current signing copy and checked every required signature.'
         : 'Reviewed the uploaded signed file against the current signing copy and checked every required signature.'
-      : requireSignedEvidenceCheck ? 'Reviewed the existing signed document and checked every required signature.' : ''
+      : requireSignedEvidenceCheck ? 'Reviewed the existing signed document and checked every required signature.' : reviewInDialog ? 'Reviewed the uploaded document and checked it meets this requirement.' : ''
     const completed = await onReview?.({ item, document, ...requestFields, action: 'approve', reason })
     if (completed !== false) {
       setConfirmingSignedCopy(false)
@@ -89,15 +91,16 @@ function SellerDocumentReviewActions({
               {rejecting ? <XCircle size={20} aria-hidden="true" /> : <CheckCircle2 size={20} aria-hidden="true" />}
             </span>
             <div className="min-w-0">
-              <DialogTitle className="text-base font-semibold leading-6 text-[#20364c]">{rejecting ? 'Request a replacement' : `${acceptLabel === 'Accept' ? 'Accept' : 'Approve'} signed document`}</DialogTitle>
+              <DialogTitle className="text-base font-semibold leading-6 text-[#20364c]">{rejecting ? 'Request a replacement' : `${acceptLabel === 'Accept' ? 'Accept' : 'Approve'} ${requireSignedCopyCheck || requireSignedEvidenceCheck || onlineSigned ? 'signed document' : 'document'}`}</DialogTitle>
               <p className="mt-0.5 break-words text-sm text-[#607387]">{documentLabel}</p>
             </div>
           </div>
-          <DialogDescription className="mt-4 text-sm leading-6 text-[#607387]">{rejecting ? 'Explain what needs to change. The seller will see this reason.' : 'Confirm you have checked the signed copy before accepting it.'}</DialogDescription>
+          <DialogDescription className="mt-4 text-sm leading-6 text-[#607387]">{rejecting ? 'Explain what needs to change. The seller will see this reason.' : 'Open and check the document before approving it.'}</DialogDescription>
+          {onOpenDocument ? <button type="button" onClick={onOpenDocument} disabled={isBusy} className="mt-3 text-sm font-semibold text-[#315b7d] underline">Open document</button> : null}
           {confirmingSignedCopy ? <>
             <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-[#dce8e1] bg-[#f5faf7] p-3.5 text-sm leading-6 text-[#315b45]">
               <input type="checkbox" checked={signedCopyChecked} onChange={(event) => setSignedCopyChecked(event.target.checked)} disabled={isBusy} className="mt-1 h-4 w-4 shrink-0 accent-[#1f7a46]" />
-              <span>{onlineSigned ? 'I reviewed this signed document and checked every required signature.' : !requireSignedCopyCheck
+              <span>{reviewInDialog && !requireSignedCopyCheck && !requireSignedEvidenceCheck && !onlineSigned ? 'I reviewed this document and checked it meets this requirement.' : onlineSigned ? 'I reviewed this signed document and checked every required signature.' : !requireSignedCopyCheck
                 ? 'I checked this existing signed document and every required signature.'
                 : isMandate
                 ? 'I compared the uploaded mandate with the reviewed signing copy and checked every required signature.'
@@ -105,9 +108,10 @@ function SellerDocumentReviewActions({
             </label>
             <div className="mt-5 flex flex-col-reverse gap-2 border-t border-[#edf2f7] pt-4 sm:flex-row sm:justify-end">
               <button type="button" onClick={closeDialog} disabled={isBusy} className="min-h-10 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#52657b] disabled:opacity-60">Cancel</button>
+              {reviewInDialog ? <button type="button" onClick={() => { setConfirmingSignedCopy(false); setRejecting(true) }} disabled={isBusy} className="min-h-10 rounded-lg border border-[#efcbc8] px-4 text-sm font-semibold text-[#9a4038]">Reject</button> : null}
               <button type="button" onClick={() => void submitApproval()} disabled={isBusy || !signedCopyChecked} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#1f7a46] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
                 {busyAction === actionKey('approve') ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                {acceptLabel === 'Accept' ? 'Accept signed copy' : 'Approve signed copy'}
+                {reviewInDialog && !requireSignedCopyCheck && !requireSignedEvidenceCheck && !onlineSigned ? 'Approve document' : acceptLabel === 'Accept' ? 'Accept signed copy' : 'Approve signed copy'}
               </button>
             </div>
           </> : <div className="mt-4">
@@ -160,7 +164,8 @@ function SellerDocumentReviewActions({
             Send reminder
           </button>
         ) : null}
-        {canReview && (onlineSigned || status === 'uploaded' || reviewLabel === 'Review') ? (
+        {canReview && reviewInDialog ? <button type="button" ref={reviewTrigger} disabled={isBusy} onClick={() => { setSignedCopyChecked(false); setConfirmingSignedCopy(true) }} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#d6e3f0] bg-[#f7fbff] px-3 text-xs font-semibold text-[#315b7d] disabled:opacity-60">Review document</button> : null}
+        {canReview && !reviewInDialog && (onlineSigned || status === 'uploaded' || reviewLabel === 'Review') ? (
           <button
             type="button"
             onClick={() => void onReview?.({ item, document, ...requestFields, action: 'start_review', reason: '' })}
@@ -171,7 +176,7 @@ function SellerDocumentReviewActions({
             {reviewLabel}
           </button>
         ) : null}
-        {canReview ? (
+        {canReview && !reviewInDialog ? (
           <>
             <button
               type="button"

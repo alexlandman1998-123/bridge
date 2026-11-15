@@ -1,8 +1,30 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import SellerDocumentReviewActions from '../SellerDocumentReviewActions.jsx'
 afterEach(cleanup)
+it('uses one row review dialog for ordinary uploads and requires an explicit check', async () => {
+  const review = vi.fn().mockResolvedValue(true), open = vi.fn()
+  const document = { id: 'rates-file', requirement_id: 'rates-slot' }
+  render(<SellerDocumentReviewActions item={{ key: 'rates_account', label: 'Rates account', status: 'uploaded', linkedDocument: document }} reviewInDialog onOpenDocument={open} onReview={review} />)
+  expect(screen.queryByRole('button', { name: 'Approve', exact: true })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Review document' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open document' }))
+  expect(open).toHaveBeenCalledOnce()
+  const approve = screen.getByRole('button', { name: 'Approve document' })
+  expect(approve.disabled).toBe(true)
+  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(approve)
+  await waitFor(() => expect(review).toHaveBeenCalledWith(expect.objectContaining({ document, action: 'approve' })))
+})
+it('keeps signature checks and rejection available in the same row review dialog', () => {
+  render(<SellerDocumentReviewActions item={{ key: 'signed_fica_declaration', status: 'uploaded', linkedDocument: { id: 'fica-file', requirement_id: 'fica-slot' } }} reviewInDialog requireSignedEvidenceCheck onReview={vi.fn()} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Review document' }))
+  expect(screen.getByText('I checked this existing signed document and every required signature.')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Approve signed copy' }).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Reject', exact: true }))
+  expect(screen.getByRole('button', { name: 'Reject and request replacement' }).disabled).toBe(true)
+})
 it('reviews the exact current shared file from the row showing awaiting review', () => {
   const review = vi.fn()
   const document = { id: 'shared-file', canonical_requirement_instance_id: 'slot', is_current_evidence: true, status: 'under_review' }

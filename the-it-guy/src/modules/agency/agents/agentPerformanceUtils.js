@@ -1,4 +1,5 @@
 import { appointmentMatchesAgent } from '../../../core/appointments/appointmentReadModel.js'
+import { isDashboardTransactionActive } from '../../../lib/dashboardTransactionIntegrity.js'
 export const AGENT_DATE_RANGE_OPTIONS = [
   { value: 'last_7_days', label: 'Last 7 days' },
   { value: 'last_30_days', label: 'Last 30 days' },
@@ -21,7 +22,6 @@ export const LEADERBOARD_METRICS = [
   { value: 'responseTime', label: 'Response time' },
 ]
 
-const ACTIVE_TRANSACTION_BLOCKLIST = ['registered', 'cancelled', 'canceled', 'archived', 'deleted', 'lost']
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const ACTIVITY_TYPES = ['calls', 'viewings', 'followUps', 'emails', 'meetings', 'notes']
 const STALE_LEAD_DAYS = 7
@@ -120,6 +120,9 @@ function buildAgentLookup(agents = []) {
 
 function resolveRowAgent(row = {}, agentLookup = new Map()) {
   const transaction = row.transaction || row
+  // An explicit assignee wins over a creator or stale legacy email.
+  const assignedId = normalizeKey(transaction.assigned_user_id || transaction.assignedUserId || transaction.assigned_agent_id || transaction.assignedAgentId || row.assigned_user_id || row.assignedUserId || row.assigned_agent_id || row.assignedAgentId)
+  if (assignedId) return agentLookup.get(assignedId) || null
   const candidates = [
     row.id,
     row.userId,
@@ -182,16 +185,14 @@ function getTransactionStage(row = {}) {
 function getActiveStageKey(row = {}) {
   const stage = getTransactionStage(row)
   if (stage.includes('register')) return 'registration'
-  if (stage.includes('transfer') || stage.includes('lodg')) return 'transfer'
-  if (stage.includes('finance') || stage.includes('bond') || stage.includes('bank')) return 'finance'
+  if (stage.includes('transfer') || stage.includes('lodg') || /\btrf\b/.test(stage)) return 'transfer'
+  if (stage.includes('finance') || stage.includes('bond') || stage.includes('bank') || /\bfin\b/.test(stage)) return 'finance'
   if (stage.includes('otp') || stage.includes('offer') || stage.includes('sale agreement')) return 'otp'
   return 'otp'
 }
 
 function isActiveTransaction(row = {}) {
-  const stage = getTransactionStage(row)
-  if (!stage) return true
-  return !ACTIVE_TRANSACTION_BLOCKLIST.some((blocked) => stage.includes(blocked))
+  return (row.transaction || row).is_demo_data !== true && isDashboardTransactionActive(row)
 }
 
 function isRegisteredTransaction(row = {}) {
@@ -210,21 +211,13 @@ function isRegisteredTransaction(row = {}) {
 function getTransactionValue(row = {}) {
   const transaction = row.transaction || row
   return toNumber(
-    transaction.purchase_price ||
-      transaction.sales_price ||
-      transaction.cash_amount ||
-      row.purchasePrice ||
-      row.salesPrice ||
+    transaction.sales_price ??
+      transaction.purchase_price ??
+      transaction.cash_amount ??
+      row.salesPrice ??
+      row.purchasePrice ??
       row.unit?.price,
   )
-}
-
-function getListingValue(row = {}) {
-  return toNumber(row.askingPrice || row.asking_price || row.price || row.estimatedValue || row.estimated_value)
-}
-
-function getOpportunityValue(row = {}) {
-  return toNumber(row.estimatedValue || row.estimated_value || row.budget || row.opportunityValue || row.opportunity_value)
 }
 
 function getTransactionDate(row = {}) {
@@ -247,8 +240,8 @@ function getLeadDate(row = {}) {
 }
 
 function isOtpLead(row = {}) {
-  const signal = normalizeKey(`${row.stage || ''} ${row.status || ''} ${row.outcome || ''} ${row.nextAction || ''} ${row.next_action || ''}`)
-  return signal.includes('otp') || signal.includes('signed') || signal.includes('accepted offer') || signal.includes('offer accepted') || signal.includes('converted') || signal.includes('deal')
+  const signal = normalizeKey(`${row.stage || ''} ${row.status || ''} ${row.outcome || ''}`)
+  return /\botp\b|otp[_ -]signed|accepted[_ -]offer|offer[_ -]accepted/.test(signal)
 }
 
 function isOpenLead(row = {}) {
@@ -438,6 +431,14 @@ export function buildAgentPerformanceModel({
   const responseSamples = new Map()
   const convertedLeadCount = new Map()
   const leadCount = new Map()
+  const realDeals = transactions.filter(row => {
+    const transaction = row.transaction || row
+    return transaction.is_demo_data !== true && !transaction.cancelled_at && !transaction.deleted_at
+      && !/cancelled|canceled|lost|deleted/.test(getTransactionStage(row))
+      && (isActiveTransaction(row) || isRegisteredTransaction(row))
+  }).map(row => row.transaction || row)
+  const convertedLeadIds = new Set(realDeals.map(row => normalizeKey(row.originating_buyer_lead_id)).filter(Boolean))
+  const realDealIds = new Set(realDeals.map(row => normalizeKey(row.id)).filter(Boolean))
 
   const registerEvent = (bucket, event) => {
     if (!bucket) return
@@ -464,10 +465,8 @@ export function buildAgentPerformanceModel({
     const key = getAgentKeys(bucket)[0]
     leadCount.set(key, (leadCount.get(key) || 0) + 1)
     bucket.performance.totalLeads += 1
-    if (isOpenLead(lead)) {
-      bucket.performance.pipelineValue += getOpportunityValue(lead)
-    }
-    if (isOtpLead(lead)) {
+    const linkedDeal = convertedLeadIds.has(normalizeKey(lead.lead_id || lead.id)) || realDealIds.has(normalizeKey(lead.converted_transaction_id))
+    if (isOtpLead(lead) || linkedDeal) {
       convertedLeadCount.set(key, (convertedLeadCount.get(key) || 0) + 1)
       bucket.performance.otpSignedCount += 1
     }
@@ -481,6 +480,7 @@ export function buildAgentPerformanceModel({
   }
 
   for (const transaction of transactions) {
+    if ((transaction.transaction || transaction).is_demo_data === true) continue
     const bucket = findBucket(transaction)
     if (!bucket) continue
     const inRange = isWithinRange(getTransactionDate(transaction), range)
@@ -524,13 +524,15 @@ export function buildAgentPerformanceModel({
   }
 
   for (const listing of listings) {
+    if (listing.is_demo_data === true) continue
     const bucket = findBucket(listing)
     if (!bucket) continue
     const status = normalizeKey(listing.status || listing.listingStatus || listing.listing_status)
-    if (!['deleted', 'archived', 'withdrawn', 'sold'].some((blocked) => status.includes(blocked))) {
+    if (normalizeKey(listing.listing_visibility || listing.listingVisibility) !== 'archived'
+      && status !== 'let'
+      && !['deleted', 'archived', 'withdrawn', 'sold', 'inactive', 'expired', 'cancelled', 'canceled', 'rented', 'leased'].some((blocked) => status.includes(blocked))) {
       bucket.performance.listings += 1
       bucket.performance.activeListingCount += 1
-      bucket.performance.pipelineValue += getListingValue(listing)
     }
     registerEvent(bucket, {
       type: 'listing',
@@ -609,8 +611,7 @@ export function buildAgentPerformanceModel({
 
     const lastActivity = parseDate(bucket.performance.lastActivityAt)
     const inactiveForDays = lastActivity ? (now.getTime() - lastActivity.getTime()) / 86400000 : Infinity
-    if (inactiveForDays > 7) bucket.attentionFlags.push('No activity in 7 days')
-    if (bucket.performance.activeTransactions <= 0 && bucket.performance.pipelineValue > 0) bucket.attentionFlags.push('Pipeline without active transactions')
+    if (lastActivity && inactiveForDays > 7) bucket.attentionFlags.push('No activity in 7 days')
     if (bucket.performance.overdueFollowUps > 0) bucket.attentionFlags.push(`${bucket.performance.overdueFollowUps} overdue follow-up${bucket.performance.overdueFollowUps === 1 ? '' : 's'}`)
     if (bucket.performance.staleLeads > 0) bucket.attentionFlags.push(`${bucket.performance.staleLeads} stale lead${bucket.performance.staleLeads === 1 ? '' : 's'}`)
 

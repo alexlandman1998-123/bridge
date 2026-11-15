@@ -36,7 +36,7 @@ describe('seller document actions', () => {
     render(<SellerDocumentWorkflowActions item={{ label: 'Disclosure' }} copy={{}} request={{ status: 'signed', signed_count: 2, signer_count: 2 }} onReview={onReview} />)
     expect(screen.queryByLabelText('Upload manually Disclosure')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Generate and send for signature' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Review signed copy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Review document' }))
     expect(onReview).toHaveBeenCalledOnce()
   })
 })

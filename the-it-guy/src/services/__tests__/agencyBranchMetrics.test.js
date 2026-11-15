@@ -27,6 +27,30 @@ try {
   assert.equal(branch.kpis.activeOperationalTeam, 3)
   assert.equal(branch.kpis.activeMembers, 3)
   assert.equal(branch.kpis.declaredAgentCapacity, 2)
+  const snapshotDeals = __agencyBranchServiceTestUtils.attachCommissionSnapshots([
+    { id: 'jooste', assigned_branch_id: 'head-office', current_main_stage: 'OTP', sales_price: 1240000 },
+    { id: 'kruger', assigned_branch_id: 'head-office', current_main_stage: 'OTP', sales_price: 1600000 },
+  ], [
+    { transaction_id: 'jooste', sale_price: 1000000, gross_commission_amount: 100000 },
+    { transaction_id: 'kruger', sale_price: 1000000, gross_commission_amount: 100000 },
+  ])
+  const stock = [{ id: 'stock', branch_id: 'head-office', listing_status: 'active', asking_price: 40000000 }]
+  const reconciled = __agencyBranchServiceTestUtils.buildBranchViewModel({ id: 'head-office' }, { transactions: snapshotDeals, listings: stock })
+  const reconciledCompany = __agencyBranchServiceTestUtils.buildAgencyBranchOverview([reconciled], { records: { transactions: snapshotDeals, listings: stock, members: [] } })
+  assert.equal(reconciled.kpis.pipelineValue, 2840000)
+  assert.equal(reconciledCompany.totals.companyPipeline, 2840000)
+  assert.equal(reconciled.kpis.projectedCommission, 200000, 'preserve agreed stored amounts when prices differ')
+  assert.equal(reconciledCompany.totals.projectedCommission, 200000)
+  assert.equal(reconciledCompany.totals.commissionSnapshotsNeedingReview, 2)
+  const unknown = __agencyBranchServiceTestUtils.buildBranchViewModel({ id: 'head-office' }, { transactions: __agencyBranchServiceTestUtils.attachCommissionSnapshots(snapshotDeals, [], false) })
+  assert.equal(unknown.kpis.hasProjectedCommissionData, false, 'failed commission reads are not confirmed zero')
+  const historicalStock = __agencyBranchServiceTestUtils.buildBranchViewModel(
+    { id: 'head-office' }, { listings: [
+      { id: 'withdrawn-stock', branch_id: 'head-office', listing_status: 'withdrawn' },
+      { id: 'test-stock', branch_id: 'head-office', listing_status: 'active', is_demo_data: true },
+    ] },
+  )
+  assert.deepEqual(historicalStock.listings.map(row => row.id), ['withdrawn-stock'], 'withdrawn stock remains available to its status filter; synthetic stock is excluded')
 
   const savedProfile = __agencyBranchServiceTestUtils.buildBranchViewModel(
     { id: 'head-office', organisation_id: 'org-1', name: 'Cape Town', address: '12 Main Road', cover_image_url: 'https://example.com/persisted-cover.jpg', principal_user_id: 'selected-manager', manager_name: 'Selected Manager' },
@@ -53,6 +77,29 @@ try {
   assert.equal(overview.totals.operationalTeam, 3)
   assert.equal(overview.branches[0].activeSalesAgents, 1)
   assert.equal(overview.branches[0].activeOperationalTeam, 3)
+  const unallocated = __agencyBranchServiceTestUtils.buildAgencyBranchOverview([], { records: {
+    members: [], listings: [], transactions: [
+      { id: 'unassigned', lifecycle_state: 'active', sales_price: 1000000 },
+      { id: 'allocated', assigned_branch_id: 'head-office', lifecycle_state: 'active', sales_price: 2000000 },
+      { id: 'archived', lifecycle_state: 'archived' },
+    ],
+  } })
+  assert.equal(unallocated.totals.activeTransactions, 2)
+  assert.equal(unallocated.totals.unassignedTransactions, 1)
+  const kingdomRows = [
+    { id: 'jooste', stage: 'OTP Signed', current_main_stage: 'OTP', lifecycle_state: 'active', sales_price: 1240000, assigned_branch_id: 'head-office' },
+    { id: 'kruger', stage: 'OTP Signed', current_main_stage: 'OTP', lifecycle_state: 'active', sales_price: 1600000, assigned_branch_id: 'head-office' },
+    { id: 'qa-finance', stage: 'Finance', is_demo_data: true, lifecycle_state: 'active' },
+    { id: 'qa-otp', stage: 'OTP Signed', is_demo_data: true, lifecycle_state: 'active' },
+    { id: 'claremont-1', stage: 'Available', current_main_stage: 'AVAIL', lifecycle_state: 'active', assigned_branch_id: 'head-office' },
+    { id: 'claremont-2', stage: 'Available', current_main_stage: 'AVAIL', lifecycle_state: 'active', assigned_branch_id: 'head-office' },
+  ]
+  const kingdomBranch = __agencyBranchServiceTestUtils.buildBranchViewModel({ id: 'head-office' }, { transactions: kingdomRows })
+  const kingdomOverview = __agencyBranchServiceTestUtils.buildAgencyBranchOverview([kingdomBranch], { records: { members: [], listings: [], transactions: kingdomRows } })
+  assert.equal(kingdomBranch.kpis.activeTransactions, 2)
+  assert.equal(kingdomOverview.totals.activeTransactions, 2)
+  assert.equal(kingdomOverview.totals.transactionsAwaitingReview, 2)
+  assert.equal(kingdomOverview.totals.companyPipeline, 2840000)
 
   const now = new Date('2026-09-15T12:00:00Z')
   const workspaceBranch = {

@@ -2,6 +2,7 @@ import { resolveAppointmentSchedule } from '../../../core/appointments/appointme
 import { appointmentMatchesAgent, appointmentReadState } from '../../../core/appointments/appointmentReadModel.js'
 import { sastDayStart, addCalendarDays, sameSastDay } from '../../../core/appointments/attorneyCalendarModel.js'
 import { AGENT_DATE_RANGE_OPTIONS, buildAgentPerformanceModel, resolveAgentDateRange } from './agentPerformanceUtils.js'
+import { isDashboardTransactionActive } from '../../../lib/dashboardTransactionIntegrity.js'
 
 const ACTIVE_STATUS_VALUES = new Set(['active', 'accepted', 'onboarding_started'])
 const INACTIVE_STATUS_SIGNALS = ['inactive', 'disabled', 'revoked', 'expired', 'deleted', 'archived']
@@ -156,8 +157,7 @@ function sortAgents(rows = [], sortBy = 'pipeline') {
 function buildAttentionReasons(agent = {}, now = new Date()) {
   const performance = agent.performance || {}
   const reasons = []
-  if (daysSince(performance.lastActivityAt, now) > 7) reasons.push('No activity in 7 days')
-  if (toNumber(performance.activeTransactionCount || performance.activeTransactions) === 0 && toNumber(performance.pipelineValue) > 0) reasons.push('Pipeline without active transactions')
+  if (parseDate(performance.lastActivityAt) && daysSince(performance.lastActivityAt, now) > 7) reasons.push('No activity in 7 days')
   if (toNumber(performance.overdueFollowUps) > 0) reasons.push('Overdue follow-ups')
   if (toNumber(performance.staleLeads) > 0) reasons.push('Stale leads')
   if (Number.isFinite(Number(performance.responseTimeHours)) && Number(performance.responseTimeHours) > RESPONSE_TIME_THRESHOLD_HOURS) reasons.push('Slow response time')
@@ -259,7 +259,7 @@ export function getPrincipalAgentCommandCentre({
   const totalAgents = modelAgents.length
   const activeToday = modelAgents.filter((agent) => agent.performance?.activeToday || isToday(agent.performance?.lastActivityAt, now)).length
   const pipelineValue = modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.pipelineValue), 0)
-  const transactionsCount = modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.activeTransactionCount || agent.performance?.activeTransactions || agent.performance?.deals), 0)
+  const transactionsCount = modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.activeTransactionCount ?? agent.performance?.activeTransactions), 0)
   const conversionValues = modelAgents
     .map((agent) => agent.performance?.conversionRate)
     .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
@@ -296,7 +296,7 @@ export function getPrincipalAgentCommandCentre({
     const attention = attentionByAgent.get(agent.id || agent.email || agent.displayName)
     branch.activeAgents += getAgentStatus(agent) === 'active' ? 1 : 0
     branch.pipelineValue += toNumber(agent.performance?.pipelineValue)
-    branch.transactions += toNumber(agent.performance?.activeTransactionCount || agent.performance?.activeTransactions || agent.performance?.deals)
+    branch.transactions += toNumber(agent.performance?.activeTransactionCount ?? agent.performance?.activeTransactions)
     branch.conversionTotal += toNumber(agent.performance?.conversionRate)
     branch.conversionCount += 1
     branch.attentionCount += attention?.reasons?.length ? 1 : 0
@@ -636,7 +636,7 @@ function isCancelledTransaction(row = {}) {
 }
 
 function isActiveTransaction(row = {}) {
-  return !isClosedTransaction(row) && !isCancelledTransaction(row)
+  return (row.transaction || row).is_demo_data !== true && isDashboardTransactionActive(row)
 }
 
 function isOpenLead(row = {}) {
@@ -845,7 +845,10 @@ export function getPrincipalAgentDetailCommandCentre({
   const registeredThisMonthValue = registeredThisMonthRows.reduce((sum, row) => sum + getRegisteredTransactionValue(row), 0)
   const commissionGenerated = performance.commissionMtd !== null && performance.commissionMtd !== undefined
     ? toNumber(performance.commissionMtd)
-    : registeredThisMonthValue * 0.03
+    : registeredThisMonthRows.length ? null : 0
+  const activeCommissionValues = activeDeals.map(row => (row.transaction || row).agent_commission_amount)
+  const projectedCommission = activeCommissionValues.every(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)))
+    ? activeCommissionValues.reduce((sum, value) => sum + Number(value), 0) : null
   const registrationDayValues = Array.isArray(performance.registrationDays)
     ? performance.registrationDays.filter((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
     : []
@@ -929,7 +932,7 @@ export function getPrincipalAgentDetailCommandCentre({
       financialRows: [
         ['Sales Value', registeredThisMonthValue],
         ['Commission Generated', commissionGenerated],
-        ['Projected Commission', toNumber(performance.pipelineValue) ? toNumber(performance.pipelineValue) * 0.03 : 0],
+        ['Projected Commission', projectedCommission],
         ['Average Response Time', performance.responseTimeLabel || 'N/A'],
       ],
     },

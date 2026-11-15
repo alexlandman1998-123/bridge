@@ -92,7 +92,7 @@ export async function loadAgentPerformanceSources({
     const organisationId = normalizeOrganisationId({ organisationSettings, directory, profile })
     const [branches, crmRows, remotePrivateListings, appointments, canvassingRows] = await Promise.all([
       canManageDirectory ? getBranchOptions().catch(() => []) : Promise.resolve([]),
-      organisationId ? listAgencyCrmLeadContacts(organisationId).catch(() => EMPTY_CRM_SOURCE) : Promise.resolve(EMPTY_CRM_SOURCE),
+      organisationId ? listAgencyCrmLeadContacts(organisationId).catch(() => null) : Promise.resolve(EMPTY_CRM_SOURCE),
       organisationId
         ? getOrganisationPrivateListings(organisationId, {
           includeRequirementsAndDocuments: false,
@@ -117,8 +117,8 @@ export async function loadAgentPerformanceSources({
   ])
   const { organisationSettings, organisationId, branches, crmRows, remotePrivateListings, appointments, canvassingRows } = operationalSources
 
-  const privateListings = Array.isArray(remotePrivateListings) && remotePrivateListings.length ? remotePrivateListings : localPrivateListings
-  const pipelineRows = Array.isArray(crmRows?.leads) && crmRows.leads.length ? crmRows.leads : localPipelineRows
+  const privateListings = Array.isArray(remotePrivateListings) ? remotePrivateListings : localPrivateListings
+  const pipelineRows = Array.isArray(crmRows?.leads) ? crmRows.leads : localPipelineRows
   const transactionRows = Array.isArray(transactions) ? transactions : []
 
   return {
