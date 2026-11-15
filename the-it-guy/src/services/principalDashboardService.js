@@ -726,6 +726,7 @@ function scopeTransactionsToAgency(rows = [], agencyId = '') {
 }
 
 function getCommissionAmount(row = {}, commissionByTransaction = new Map()) {
+  if (commissionByTransaction.has(normalizeText(row.id))) return commissionByTransaction.get(normalizeText(row.id))
   const recorded = row.agency_commission_amount ?? row.gross_commission_amount
   return recorded !== null && recorded !== undefined && recorded !== '' ? toNumber(recorded) : commissionByTransaction.get(normalizeText(row.id)) ?? 0
 }
@@ -1934,11 +1935,13 @@ async function getPrincipalDashboardDataUncached({
   })
 
   const commissionByTransaction = new Map()
-  for (const row of transactionCommissions) {
+  for (const row of [...transactionCommissions].sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))) {
     const amount = row.agency_commission_amount ?? row.gross_commission_amount
-    if (amount !== null && amount !== undefined) commissionByTransaction.set(normalizeText(row.transaction_id), toNumber(amount))
+    if (amount !== null && amount !== undefined && !commissionByTransaction.has(normalizeText(row.transaction_id))) commissionByTransaction.set(normalizeText(row.transaction_id), toNumber(amount))
   }
-  const commissionForecast = activeTransactions.reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
+  const commissionForecast = activeTransactions.every(row => commissionByTransaction.has(normalizeText(row.id))
+    || row.agency_commission_amount != null || row.gross_commission_amount != null)
+    ? activeTransactions.reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0) : null
   const expectedCommissionTransactions = activeTransactions.filter((row) => {
     const expectedDate = row.expected_transfer_date || row.registration_date
     return expectedDate ? isBetween(expectedDate, range.start, range.end) : true

@@ -4,6 +4,18 @@ vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabas
 import { getPrincipalDashboardData, clearPrincipalDashboardRuntimeCache } from '../principalDashboardService'
 
 describe('principal dashboard seller onboarding source', () => {
+  it('preserves the latest saved zero commission instead of using a stale amount or a percentage', async () => {
+    clearPrincipalDashboardRuntimeCache()
+    from.mockImplementation(table => {
+      const data = table === 'transactions' ? [{ id: 'real', organisation_id: 'agency', current_main_stage: 'OTP', sales_price: 1600000, gross_commission_amount: 100000 }]
+        : table === 'transaction_commissions' ? [{ id: 'old', transaction_id: 'real', gross_commission_amount: 100000, updated_at: '2026-11-01' }, { id: 'current', transaction_id: 'real', gross_commission_amount: 0, updated_at: '2026-11-15' }] : []
+      const query = { then: resolve => Promise.resolve({ data, error: null }).then(resolve) }
+      for (const method of ['select', 'eq', 'in', 'order', 'limit']) query[method] = () => query
+      return query
+    })
+    const result = await getPrincipalDashboardData({ organisationId: 'agency', forceRefresh: true })
+    expect(result.kpis.commissionForecast).toBe(0)
+  })
   it('excludes synthetic finance deals and onboarding placeholders from the real company dashboard', async () => {
     clearPrincipalDashboardRuntimeCache()
     const transactions = [
@@ -21,6 +33,7 @@ describe('principal dashboard seller onboarding source', () => {
     expect(JSON.stringify(result)).not.toContain('"qa"')
     expect(result.activeTransactions).toHaveLength(2)
     expect(result.kpis.pipelineValue).toBe(2840000)
+    expect(result.kpis.commissionForecast).toBeNull()
   })
   it('reads the current listing-owned rows and retains their commission calculation', async () => {
     calls.length = 0
