@@ -1967,6 +1967,11 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
                   <ArrowLeft size={13} aria-hidden="true" />
                   Back to listings
                 </button>
+                <button data-rental-control="hero" type="button"
+                  onClick={() => navigate(buildRentalListingDetailPath(listingId, 'marketing'), { state: { ...location.state, rentalWithdrawalRequested: true } })}
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[0.74rem] font-semibold text-white backdrop-blur-sm transition hover:bg-white/20">
+                  Manage withdrawal
+                </button>
               </div>
 
             </div>
@@ -1982,6 +1987,8 @@ function ScopedRentalListingDetailPage({ mobile = false }) {
             </div>
           </div>
         </header>
+
+        {activeTab === 'marketing' && location.state?.rentalWithdrawalRequested ? <p role="status" className="rounded-xl border border-[#e4d2b2] bg-[#fffaf0] p-4 text-sm text-[#7a4e12]">Choose the website or portal below, open Manage, then choose Withdraw advert. Each channel is withdrawn separately; the saved rental record is retained. Check channel status afterwards to confirm removal.</p> : null}
 
         {successMessage ? (
           <p className="inline-flex items-center gap-2 rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">

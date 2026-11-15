@@ -184,10 +184,21 @@ export function reconcileRequiredDocumentInstanceLinks(rows = [], instances = []
   const diagnostics = { linkedKeys: [], missingKeys: [], ambiguousKeys: [], conflictingKeys: [] }
   const reconciledRows = rows.map((row) => {
     const identity = requiredDocumentIdentity(row)
-    const candidates = instancesByIdentity.get(identity) || []
+    const sameTransaction = (instance) => {
+      if (!row.transaction_id) return true
+      const transactionId = instance.transaction_id || (instance.context_type === 'transaction' ? instance.context_id : null)
+      return transactionId ? transactionId === row.transaction_id : !instance.context_type
+    }
+    const identityCandidates = instancesByIdentity.get(identity) || []
+    const candidates = identityCandidates.filter(sameTransaction)
     const linkedId = row.canonical_requirement_instance_id
-    const removedMatch = removed.find((instance) => instanceIdentity(instance) === identity && instance.id === linkedId)
-    const allMatchingRemoved = !linkedId && !candidates.length && removed.some((instance) => instanceIdentity(instance) === identity)
+    if ((!linkedId && identityCandidates.length && !candidates.length)
+      || (linkedId && instancesById.has(linkedId) && !sameTransaction(instancesById.get(linkedId)))) {
+      diagnostics.conflictingKeys.push(row.document_key)
+      return row
+    }
+    const removedMatch = removed.find((instance) => sameTransaction(instance) && instanceIdentity(instance) === identity && instance.id === linkedId)
+    const allMatchingRemoved = !linkedId && !candidates.length && removed.some((instance) => sameTransaction(instance) && instanceIdentity(instance) === identity)
     if (removedMatch || allMatchingRemoved) {
       return { ...row, enabled: false, is_required: false, status: 'not_required' }
     }

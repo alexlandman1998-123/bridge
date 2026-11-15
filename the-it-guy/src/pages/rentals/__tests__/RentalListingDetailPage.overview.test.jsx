@@ -48,6 +48,15 @@ function renderMedia(listing, tab='marketing') {
   return render(<MemoryRouter initialEntries={[`/agent/rentals/listings/listing-1/${tab}`]}><Routes><Route path="/agent/rentals/listings/:listingId/:detailTab?" element={<RentalListingDetailPage />} /></Routes></MemoryRouter>)
 }
 
+it('exposes withdrawal management from the rental overview without withdrawing an advert', async () => {
+  renderMedia(mediaListing(), 'overview')
+  fireEvent.click(await screen.findByRole('button', { name: 'Manage withdrawal' }))
+  expect(await screen.findByText(/Each channel is withdrawn separately/)).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Listing Channels' })).toBeTruthy()
+  expect(mocks.withdrawP24).not.toHaveBeenCalled()
+  expect(mocks.withdrawPP).not.toHaveBeenCalled()
+})
+
 async function openPortalRequirements(channel = 'Property24') {
   await screen.findByRole('heading', { name: 'Listing Channels' })
   fireEvent.click(screen.getAllByRole('button', { name: 'Manage listing', hidden: true })[channel === 'Property24' ? 0 : 1])

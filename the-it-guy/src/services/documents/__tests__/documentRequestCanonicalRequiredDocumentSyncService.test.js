@@ -7,6 +7,16 @@ import {
 } from '../documentRequestCanonicalRequiredDocumentSyncService.js'
 import { getAttorneyCategoryForRequiredDocument } from '../matterDocumentWorkspaceModel.js'
 
+test('does not attach a checklist instance from another transaction just because its key and role match', () => {
+  const row = { transaction_id: 'transaction-a', document_key: 'buyer_id_document', required_from_role: 'buyer' }
+  const foreign = { id: 'foreign-slot', transaction_id: 'transaction-b', context_type: 'transaction', context_id: 'transaction-b', document_definition_key: 'buyer_id_document', requested_from_role: 'buyer', status: 'required' }
+  const result = reconcileRequiredDocumentInstanceLinks([row], [foreign])
+  assert.equal(result.rows[0].canonical_requirement_instance_id, undefined)
+  assert.deepEqual(result.diagnostics.conflictingKeys, ['buyer_id_document'])
+  const linked = reconcileRequiredDocumentInstanceLinks([{ ...row, canonical_requirement_instance_id: foreign.id }], [foreign])
+  assert.deepEqual(linked.diagnostics.conflictingKeys, ['buyer_id_document'])
+})
+
 const MIXED_SCENARIO = Object.freeze({
   buyerEntityType: 'trust',
   sellerEntityType: 'company',
