@@ -159,7 +159,7 @@ test('developer clients use the shared directory, audience tab and permanent pro
   mount()
   fireEvent.click(await screen.findByRole('button', { name: 'Audiences', exact: true }))
   await screen.findByText('Client audiences')
-  fireEvent.click(screen.getByRole('button', { name: 'Clients', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: 'Contacts', exact: true }))
   fireEvent.click(await screen.findByRole('button', { name: 'Open client workspace for Taylor Smith' }))
   await screen.findByRole('heading', { name: 'Taylor Smith', level: 1 })
   await screen.findByText('launch')

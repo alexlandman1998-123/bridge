@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs'
 import {PGlite} from '@electric-sql/pglite'
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const org=id(1),other=id(2),user=id(3),sender=id(4),foreign=id(5),listingId=id(6),connection=id(7)
-export async function fixture({workspace=false}={}){
+export async function fixture({workspace=false,integrations=false}={}){
   const db=new PGlite()
   await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;create table organisations(id uuid primary key);
     create table organisation_communication_channels(id uuid primary key,organisation_id uuid,branch_id uuid,provider text,channel_type text,waba_id text,phone_number_id text,meta_business_id text,display_phone_number text,business_display_name text,connection_status text,verification_status text,is_default boolean,connected_at timestamptz,disconnected_at timestamptz,last_error_message text,last_checked_at timestamptz,created_by uuid,created_at timestamptz default now(),updated_at timestamptz,meta_access_token text);
@@ -24,12 +24,35 @@ export async function fixture({workspace=false}={}){
   await db.exec("alter table organisation_users enable row level security; create policy own_membership on organisation_users for select to authenticated using(user_id=auth.uid()); grant select on organisation_users to authenticated;")
   await db.query("insert into organisation_communication_channels(id,organisation_id,provider,channel_type,phone_number_id,waba_id,connection_status,meta_access_token) values($1,$2,'meta','whatsapp','100','200','connected','secret'),($3,$4,'meta','whatsapp','101','201','connected','foreign-secret')",[sender,org,foreign,other])
   await db.query("insert into meta_lead_ads_connections(id,organisation_id,page_id,page_name,connection_status,token_ciphertext,granted_scopes,page_tasks) values($1,$2,'300','Test Page','connected','encrypted',array['pages_manage_posts'],array['CREATE_CONTENT'])",[connection,org])
+  await db.exec(readFileSync(new URL('../../../supabase/migrations/20261110092234_whatsapp_reconnect_preserve_ownership.sql',import.meta.url),'utf8'))
   if(workspace){
     await db.exec("create table notification_provider_webhook_events(id uuid primary key default gen_random_uuid(),provider text,provider_event_id text,event_type text,provider_message_id text,payload_json jsonb default '{}',processing_status text default 'received',processing_error text,received_at timestamptz default now(),processed_at timestamptz,unique(provider,provider_event_id));");
     await db.exec('alter table organisation_users add column first_name text,add column last_name text,add column email text;');
     await db.exec(readFileSync(new URL('../../../supabase/migrations/20261103193901_whatsapp_personal_number_assignment_guard.sql',import.meta.url),'utf8'));
     await db.exec(readFileSync(new URL('../../../supabase/migrations/20261109184918_whatsapp_inbox_workspace_reliability.sql',import.meta.url),'utf8'));
     await db.exec(readFileSync(new URL('../../../supabase/migrations/20261109195248_whatsapp_inbox_active_work_classification.sql',import.meta.url),'utf8'));
+    await db.exec(readFileSync(new URL('../../../supabase/migrations/20261110092830_whatsapp_personal_owner_only.sql',import.meta.url),'utf8'));
+  }
+  if(integrations){
+    assert.ok(workspace,'Privacy integration fixtures require the workspace schema')
+    await db.exec(`create schema if not exists private;
+      create table contacts(contact_id uuid primary key,organisation_id uuid,first_name text,last_name text,phone text);
+      create table leads(lead_id uuid primary key,organisation_id uuid,contact_id uuid,lead_category text,lead_source text);
+      create table recruitment_leads(id uuid primary key,organisation_id uuid,phone text,name text,source text);
+      alter table whatsapp_inbox_messages add column campaign_recipient_id uuid,add column reply_to_provider_message_id text,add column automation_run_id uuid;
+      alter table whatsapp_campaigns add column organisation_id uuid,add column name text;
+      alter table whatsapp_campaign_recipients add column organisation_id uuid,add column phone text,add column provider_message_id text;`)
+    for(const [file,names] of [
+      ['20261018110212_whatsapp_inbox_crm_links.sql',['whatsapp_inbox_crm_links','whatsapp_inbox_crm_link_events']],
+      ['20261018131742_whatsapp_crm_automations.sql',['whatsapp_automation_rules','whatsapp_automation_subjects','whatsapp_automation_runs']],
+      ['20261103174756_whatsapp_manual_chat_import.sql',['whatsapp_manual_chat_imports']],
+    ]){
+      const source=readFileSync(new URL('../../../supabase/migrations/'+file,import.meta.url),'utf8')
+      for(const name of names){const start=source.indexOf('create table public.'+name+' (');assert.ok(start>=0);await db.exec(source.slice(start,source.indexOf(';',start)+1))}
+      if(file.includes('crm_links')){const start=source.indexOf('create function public.whatsapp_crm_phone(');const end=source.indexOf('$$',source.indexOf('$$',start)+2)+2;await db.exec(source.slice(start,end)+';')}
+    }
+    await db.exec(readFileSync(new URL('../../../supabase/migrations/20261110092943_whatsapp_personal_integration_boundaries.sql',import.meta.url),'utf8'))
+    await db.exec('create trigger whatsapp_automation_message after insert or update on whatsapp_inbox_messages for each row execute function private.whatsapp_automation_message();create trigger whatsapp_automation_conversation after update on whatsapp_inbox_conversations for each row execute function private.whatsapp_automation_conversation();')
   }
   return db
 }
@@ -38,5 +61,5 @@ export async function fixture({workspace=false}={}){
 export function sqlClient(db){return {rpc:async(name,args)=>{try{return {data:(await db.query(`select * from ${name}(${Object.keys(args).map((k,i)=>`${k}=>$${i+1}`).join(',')})`,Object.values(args).map(v=>v&&typeof v==='object'?JSON.stringify(v):v))).rows.map(row => Object.keys(row).length===1 ? Object.values(row)[0] : row)[0],error:null}}catch(error){return {data:null,error}}},from:table=>{
   let columns='*',filters=[],values=[],mutation=null,mode='',order=[],limit=''
   const bind=v=>{values.push(v&&typeof v==='object'&&!Array.isArray(v)?JSON.stringify(v):v);return `$${values.length}`}
-  const q={select(c='*'){columns=c;return q},eq(k,v){filters.push(`${k}=${bind(v)}`);return q},is(k,v){assert.equal(v,null);filters.push(`${k} is null`);return q},gt(k,v){filters.push(`${k}>${bind(v)}`);return q},lte(k,v){filters.push(`${k}<=${bind(v)}`);return q},order(k,o={}){order.push(`${k} ${o.ascending===false?'desc':'asc'}`);return q},limit(n){limit=` limit ${Number(n)}`;return q},single(){mode='single';return q},maybeSingle(){mode='maybe';return q},update(patch){mutation=`update ${table} set ${Object.entries(patch).map(([k,v])=>`${k}=${bind(v)}`).join(',')}`;return q},insert(row){mutation=`insert into ${table}(${Object.keys(row).join(',')}) values(${Object.values(row).map(bind).join(',')})`;return q},async then(resolve){try{const where=filters.length?` where ${filters.join(' and ')}`:'';const sql=mutation?`${mutation}${where} returning ${columns}`:`select ${columns} from ${table}${where}${order.length?` order by ${order.join(',')}`:''}${limit}`;const rows=(await db.query(sql,values)).rows;if(mode==='single'&&rows.length!==1)throw Error('Expected one row');return resolve({data:mode?rows[0]||null:rows,error:null})}catch(error){return resolve({data:null,error})}}};return q
+  const q={select(c='*'){columns=c;return q},or(expression){const parts=expression.split(',').map(part=>{const match=part.match(/^(owner_user_id)\.(eq|is)\.(.+)$/);assert.ok(match);if(match[2]==='is'){assert.equal(match[3],'null');return `${match[1]} is null`}return `${match[1]}=${bind(match[3])}`});filters.push(`(${parts.join(' or ')})`);return q},eq(k,v){filters.push(`${k}=${bind(v)}`);return q},is(k,v){assert.equal(v,null);filters.push(`${k} is null`);return q},gt(k,v){filters.push(`${k}>${bind(v)}`);return q},lte(k,v){filters.push(`${k}<=${bind(v)}`);return q},order(k,o={}){order.push(`${k} ${o.ascending===false?'desc':'asc'}`);return q},limit(n){limit=` limit ${Number(n)}`;return q},single(){mode='single';return q},maybeSingle(){mode='maybe';return q},update(patch){mutation=`update ${table} set ${Object.entries(patch).map(([k,v])=>`${k}=${bind(v)}`).join(',')}`;return q},insert(row){mutation=`insert into ${table}(${Object.keys(row).join(',')}) values(${Object.values(row).map(bind).join(',')})`;return q},async then(resolve){try{const where=filters.length?` where ${filters.join(' and ')}`:'';const sql=mutation?`${mutation}${where} returning ${columns}`:`select ${columns} from ${table}${where}${order.length?` order by ${order.join(',')}`:''}${limit}`;const rows=(await db.query(sql,values)).rows;if(mode==='single'&&rows.length!==1)throw Error('Expected one row');return resolve({data:mode?rows[0]||null:rows,error:null})}catch(error){return resolve({data:null,error})}}};return q
 }}}

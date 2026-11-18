@@ -37,6 +37,49 @@ test('authorization precedes data access and connection management requires an a
 import {fixture,sqlClient} from './lib/whatsappInboxFixture.mjs'
 const receive=(db,mid,at=time,phone='100',waba='200')=>db.query('select whatsapp_inbox_receive($1,$2,$3,$4,$5,$6,$7,$8,$9) id',[phone,waba,'27821234567',mid,at,mid,'text','{}','Customer'])
 
+test('number setup defaults administrators to themselves and requires explicit company-wide sharing',async()=>{
+  const db=await fixture()
+  try{
+    const handler=createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>({userId:user,isAdmin:true}),hash:async value=>value,config:{appId:'fixture',whatsappConfigId:'fixture',graphVersion:'v23.0'}})
+    const begin=fields=>handler({organisationId:org,action:'begin_whatsapp',...fields},'Bearer fixture')
+    const own=await begin({})
+    assert.equal((await db.query('select owner_user_id from meta_whatsapp_authorizations where state_hash=$1',[own.state])).rows[0].owner_user_id,user)
+    await assert.rejects(begin({ownerUserId:null}),/Confirm/)
+    await assert.rejects(begin({ownerUserId:'',confirmWorkspaceSharing:'true'}),/Confirm/)
+    const shared=await begin({ownerUserId:null,confirmWorkspaceSharing:true})
+    assert.equal((await db.query('select owner_user_id from meta_whatsapp_authorizations where state_hash=$1',[shared.state])).rows[0].owner_user_id,null)
+    await assert.rejects(handler({organisationId:org,action:'set_sender_owner',senderId:sender},''),/explicitly/)
+    await assert.rejects(handler({organisationId:org,action:'set_sender_owner',senderId:sender,ownerUserId:null},''),/Confirm/)
+    const personal=createMetaIntegrationHandler({db:sqlClient(db),authorize:async()=>({userId:user,isAdmin:false,canConnectOwn:true}),hash:async value=>value,config:{appId:'fixture',whatsappConfigId:'fixture'}})
+    await assert.rejects(personal({organisationId:org,action:'begin_whatsapp',ownerUserId:foreign},''),/only your own/)
+    const staff=await personal({organisationId:org,action:'begin_whatsapp',ownerUserId:null,confirmWorkspaceSharing:true},'')
+    assert.equal((await db.query('select owner_user_id from meta_whatsapp_authorizations where state_hash=$1',[staff.state])).rows[0].owner_user_id,user)
+  }finally{await db.close()}
+})
+
+test('verified reconnect cannot transfer number ownership or history, including under an administrator',async()=>{
+  const db=await fixture()
+  try{
+    await db.query('update organisation_communication_channels set owner_user_id=$1 where id=$2',[user,sender])
+    const conversation=(await receive(db,'privacy fixture')).rows[0].id
+    const before=(await db.query('select owner_user_id,ownership_version,meta_access_token from organisation_communication_channels where id=$1',[sender])).rows[0]
+    await db.query("insert into meta_whatsapp_authorizations(state_hash,organisation_id,requested_by,owner_user_id,token_ciphertext,expires_at) values('privacy-reconnect',$1,$2,null,'new-token',now()+interval '10 minutes')",[org,user])
+    const metadata=JSON.stringify({at:new Date().toISOString(),connection_status:'connected',verification_status:'verified',display_phone_number:'+27123456789'})
+    const finish=()=>db.query("select whatsapp_finish_authorization($1,$2,'privacy-reconnect','200','100',$3,'new-encrypted') data",[org,user,metadata])
+    await assert.rejects(finish(),/different inbox owner/)
+    assert.deepEqual((await db.query('select owner_user_id,ownership_version,meta_access_token from organisation_communication_channels where id=$1',[sender])).rows[0],before)
+    assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[conversation])).rows[0].assigned_user_id,user)
+    assert.equal((await db.query("select consumed_at from meta_whatsapp_authorizations where state_hash='privacy-reconnect'")).rows[0].consumed_at,null)
+    await db.query("update meta_whatsapp_authorizations set owner_user_id=$1 where state_hash='privacy-reconnect'",[user])
+    const saved=(await finish()).rows[0].data.sender
+    assert.equal(saved.owner_user_id,user);assert.equal(saved.ownership_version,before.ownership_version)
+    assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[conversation])).rows[0].assigned_user_id,user)
+    await assert.rejects(finish(),/expired/)
+    await db.exec('set role authenticated')
+    await assert.rejects(finish(),/permission denied/)
+  }finally{await db.close()}
+})
+
 
 
 test('Meta lead ingestion accepts the CRM source constraint without weakening routing, deduplication or historical guards',async()=>{

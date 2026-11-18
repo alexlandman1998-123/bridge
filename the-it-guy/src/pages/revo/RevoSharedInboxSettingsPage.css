@@ -20,6 +20,7 @@
 .revo-channel-settings [hidden] { display: none !important; }
 .revo-channel-settings :is(button,a,input,select,summary,[contenteditable]):focus-visible { outline: 2px solid #21896a; outline-offset: 3px; }
 .revo-channel-settings .inbox-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.revo-channel-settings .inbox-section-heading { padding: 18px 20px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #182b3603; }
 .revo-channel-settings .inbox-settings-heading h2 { margin: 0 0 4px; font-size: 17px; font-weight: 650; letter-spacing: -.02em; }
 .revo-channel-settings .inbox-settings-heading p { margin: 0; font-size: 13px; color: var(--inbox-muted); }
 .revo-channel-settings .inbox-email-settings { margin: 0; padding: 0; border: 0; }
@@ -28,15 +29,22 @@
 .revo-channel-settings button:disabled { cursor: default; opacity: .5; }
 .revo-channel-settings .inbox-settings-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 18px; align-items: start; }
 .revo-channel-settings .inbox-settings-single { grid-template-columns: minmax(0,1fr); }
-.revo-channel-settings .inbox-settings-single .inbox-mailbox-list { display: none; }
+.revo-channel-settings .inbox-settings-single .inbox-mailbox-list { display: grid; }
 .revo-channel-settings .inbox-mailbox-list { display: grid; gap: 8px; }
 .revo-channel-settings .inbox-mailbox-list button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 14px; gap: 4px; width: 100%; min-width: 0; overflow-wrap: anywhere; }
 .revo-channel-settings .inbox-mailbox-list button[aria-current=true] { background: #eef6f2; border-color: #b4d1c4; }
 .revo-channel-settings .inbox-mailbox-list strong { font-size: 13px; font-weight: 600; }
 .revo-channel-settings .inbox-mailbox-list :is(span,small) { font-size: 11px; color: var(--inbox-muted); }
 .revo-channel-settings .inbox-mailbox-list small { display: flex; align-items: center; gap: 5px; }
-.revo-channel-settings .inbox-mailbox-detail { min-width: 0; padding: 0 0 24px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #182b3603; }
+.revo-channel-settings .inbox-mailbox-list .inbox-add-new-action { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7px; min-height: 38px; border-style: dashed; color: var(--inbox-accent); white-space: nowrap; }
+.revo-channel-settings .inbox-mailbox-detail { min-width: 0; padding: 22px; border: 1px solid var(--inbox-border); border-radius: 12px; background: #fff; box-shadow: 0 2px 5px #182b3603; }
+.revo-channel-settings .inbox-email-settings label.inbox-sharing-confirmation { display: flex; align-items: flex-start; gap: 10px; max-width: 760px; margin: 14px 0 18px; line-height: 1.55; }
+.revo-channel-settings .inbox-email-settings label.inbox-sharing-confirmation input[type="checkbox"] { flex: 0 0 18px; width: 18px; min-width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 2px 0 0; }
 .revo-channel-settings .inbox-account-heading { align-items: flex-start; margin-bottom: 22px; }
+.revo-channel-settings .inbox-account-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.revo-channel-settings .inbox-account-header-actions .inbox-default-mailbox-action { min-height: 32px; padding: 6px 10px; font-size: 11px; }
+.revo-channel-settings .inbox-account-header-actions .inbox-connect-account-action { min-height: 32px; padding: 6px 10px; background: var(--inbox-accent); border-color: var(--inbox-accent); color: #fff; font-size: 11px; }
+.revo-channel-settings .inbox-account-header-actions .inbox-connect-account-action:hover:not(:disabled) { background: #12583f; border-color: #12583f; }
 .revo-channel-settings .inbox-account-identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .revo-channel-settings .inbox-account-identity > div { min-width: 0; }
 .revo-channel-settings .inbox-account-identity h3 { margin: 0 0 3px; font-size: 16px; font-weight: 650; letter-spacing: -.02em; overflow-wrap: anywhere; }
@@ -57,14 +65,28 @@
 .revo-channel-settings .inbox-email-settings :is(input,select), .revo-channel-settings .revo-add-channel :is(input,select) { width: 100%; min-width: 0; min-height: 38px; border: 1px solid #d6e0e5; border-radius: 7px; padding: 8px 10px; background: #fff; font: inherit; font-size: 12px; font-weight: 400; color: #354d59; }
 .revo-channel-settings .inbox-email-settings label, .revo-channel-settings .revo-add-channel label { display: grid; gap: 6px; font-size: 12px; font-weight: 550; }
 .revo-channel-settings .inbox-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
-.revo-channel-settings .inbox-sharing { border-top: 1px solid #edf1f3; padding-top: 18px; margin-top: 20px; }
+.revo-channel-settings .inbox-sharing { padding-top: 8px; margin-top: 20px; }
 .revo-channel-settings .inbox-sharing h4 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
-.revo-channel-settings .inbox-sharing form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; max-width: 580px; }
-.revo-channel-settings .inbox-sharing form > label { flex: 1 1 240px; }
+.revo-channel-settings .inbox-sharing form { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; width: 100%; max-width: 580px; }
+.revo-channel-settings .inbox-sharing form > label { min-width: 0; width: 100%; max-width: 100%; }
+.revo-channel-settings .inbox-sharing form > label.inbox-sharing-confirmation { display: flex; flex: none; flex-direction: row; align-items: flex-start; gap: 10px; width: 100%; max-width: 100%; margin: 0; padding: 12px 14px; border: 1px solid #e3e9e5; border-radius: 9px; background: #f7faf8; color: #52665c; font-size: 12px; font-weight: 450; line-height: 1.5; }
+.revo-channel-settings .inbox-sharing form > label.inbox-sharing-confirmation input[type="checkbox"] { flex: 0 0 17px; width: 17px; min-width: 17px; height: 17px; min-height: 17px; margin: 1px 0 0; padding: 0; }
 .revo-channel-settings .inbox-sharing form > p { flex-basis: 100%; margin: 0; }
 .revo-channel-settings .inbox-sharing > h4:not(:first-child) { margin-top: 20px; }
+.revo-channel-settings .inbox-sharing .inbox-team-permissions-heading { margin: 24px 0 12px; padding-top: 18px; border-top: 1px solid #e4e9e7; }
 .revo-channel-settings .inbox-sharing :is(p,small) { font-size: 12px; color: var(--inbox-muted); }
 .revo-channel-settings .inbox-member { margin-bottom: 9px; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox { display: flex !important; flex-direction: row; align-items: center; gap: 11px; width: 100%; min-height: 46px; margin: 0; padding: 10px 12px; border: 1px solid #e4ebe7; border-radius: 9px; background: #fff; color: #344b43; font-size: 13px; font-weight: 550; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox:hover { border-color: #a8cabb; background: #f8fbf9; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox:has(input:checked) { border-color: #2c8463; background: #eff7f2; color: #205d45; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox input[type="checkbox"] { appearance: none; display: grid; place-content: center; flex: 0 0 18px; width: 18px; min-width: 18px; height: 18px; min-height: 18px; margin: 0; padding: 0; border: 1.5px solid #9eafa7; border-radius: 5px; background: #fff; accent-color: #176c50; cursor: pointer; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox input[type="checkbox"]::after { content: ""; width: 9px; height: 5px; border: solid #fff; border-width: 0 0 2px 2px; transform: rotate(-45deg) scale(0); transition: transform 120ms ease; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox input[type="checkbox"]:checked { border-color: #176c50; background: #176c50; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox input[type="checkbox"]:checked::after { transform: rotate(-45deg) scale(1); }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox input[type="checkbox"]:focus-visible { outline: 3px solid #cce8d8; outline-offset: 2px; }
+.revo-channel-settings .inbox-email-settings .inbox-member-checkbox input[type="checkbox"]:disabled { cursor: default; opacity: .55; }
+.revo-channel-settings .inbox-team-permissions-scroll { display: grid; gap: 7px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; padding: 8px 10px 10px 0; scrollbar-gutter: stable; }
+.revo-channel-settings .inbox-team-permissions-scroll:focus-visible { outline: 2px solid #21896a; outline-offset: 2px; border-radius: 6px; }
 .revo-channel-settings .inbox-account-advanced { border-top: 1px solid #edf1f3; margin: 4px 0 0; }
 .revo-channel-settings .inbox-account-advanced summary { padding: 14px 0; font-size: 12px; font-weight: 550; cursor: pointer; color: #4e6470; }
 .revo-channel-settings .inbox-account-advanced summary span { margin-left: 12px; color: #83929a; font-weight: 400; }
@@ -79,6 +101,11 @@
 .revo-channel-settings :is(.inbox-add-mailbox,.revo-add-channel) form { padding-top: 20px; }
 .revo-channel-settings :is(.inbox-settings-error,.inbox-settings-notice) { padding: 11px 13px; font-size: 12px; border-radius: 7px; margin: 0 0 16px; }
 .revo-channel-settings .inbox-settings-empty { padding: 28px; text-align: center; border: 1px dashed var(--inbox-border); border-radius: 10px; color: var(--inbox-muted); background: #fff; }
+.revo-channel-settings .inbox-settings-empty p { margin: 0 0 14px; }
+.revo-channel-settings .inbox-settings-empty button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; color: var(--inbox-accent); }
+.revo-channel-settings .inbox-add-mailbox-modal .inbox-form-grid { margin-bottom: 16px; }
+.revo-channel-settings .inbox-add-mailbox-modal .inbox-sharing-confirmation { display: flex; align-items: flex-start; gap: 10px; max-width: 760px; margin: 14px 0 18px; line-height: 1.55; }
+.revo-channel-settings .inbox-add-mailbox-modal .inbox-sharing-confirmation input[type="checkbox"] { flex: 0 0 18px; width: 18px; min-width: 18px; height: 18px; min-height: 18px; padding: 0; margin: 2px 0 0; }
 .revo-channel-settings .revo-whatsapp-settings { margin: 0; padding: 0; border: 0; }
 .revo-channel-settings .revo-channel-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
 .revo-channel-settings .revo-channel-grid article { border: 1px solid var(--inbox-border); border-radius: 10px; background: white; padding: 20px; }

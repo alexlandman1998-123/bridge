@@ -24,7 +24,8 @@ function result(response) {
   return response.data
 }
 
-export function buildMailboxInput({ organisationId, actorUserId, providerKey, address, displayName, accessScope = 'private', ownerUserId = actorUserId } = {}) {
+export function buildMailboxInput({ organisationId, actorUserId, providerKey, address, displayName, accessScope = 'private', ownerUserId = actorUserId, confirmWorkspaceSharing = false } = {}) {
+  if (scope(accessScope) === 'workspace' && confirmWorkspaceSharing !== true) throw new Error('Confirm sharing this mailbox and imported messages with everyone in the organisation.')
   const provider = text(providerKey).toLowerCase()
   if (!PROVIDERS.has(provider)) throw new Error('Choose a supported email provider.')
   if (text(ownerUserId) !== text(actorUserId)) throw new Error('Create the mailbox in your name before transferring ownership.')
@@ -56,11 +57,16 @@ export async function loadMailboxes(organisationId) {
 }
 export async function createMailbox(input) {
   const payload = buildMailboxInput(input)
-  return normalizeMailbox(result(await client().from('revo_inbox_channels').insert(payload).select(fields).single()))
+  return normalizeMailbox(result(await client().rpc('shared_inbox_create_mailbox', {
+    p_organisation_id: payload.organisation_id, p_provider_key: payload.provider_key, p_address: payload.address,
+    p_display_name: payload.display_name, p_access_scope: payload.access_scope, p_confirm_workspace_sharing: input.confirmWorkspaceSharing === true,
+  })))
 }
-export async function updateMailboxAccess({ organisationId, channelId, accessScope, ownerUserId }) {
+export async function updateMailboxAccess({ organisationId, channelId, accessScope, ownerUserId, confirmWorkspaceSharing = false }) {
+  if (scope(accessScope) === 'workspace' && confirmWorkspaceSharing !== true) throw new Error('Confirm sharing this mailbox and its existing messages with everyone in the organisation.')
   const mailbox = result(await client().rpc('shared_inbox_update_mailbox_access', {
     p_organisation_id: id(organisationId, 'organisation'), p_channel_id: id(channelId, 'mailbox'),
+    p_confirm_workspace_sharing: confirmWorkspaceSharing === true,
     p_access_scope: scope(accessScope), p_owner_user_id: ownerUserId === undefined ? null : id(ownerUserId, 'mailbox owner'),
   }))
   if (!mailbox) throw new Error('Mailbox access could not be changed.')

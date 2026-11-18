@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Mail } from 'lucide-react'
 import { createEmailSender } from '../../services/emailCampaignService'
 import { ARCH9_CAMPAIGN_EMAIL } from '../../../../supabase/functions/_shared/emailCampaignSender.js'
 
@@ -10,10 +11,13 @@ export default function Arch9CampaignSenderForm({ organisationId, identity, plat
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const unavailable = disabled || busy || !organisationId || identity?.verification_status === 'disabled' || platformSender?.available === false
-  return <article className="email-settings-card" aria-label="Send through Arch9">
-    <h3>Send through Arch9</h3>
-    <p>Send from <strong>{ARCH9_CAMPAIGN_EMAIL}</strong> with your organisation name. Replies go to your chosen inbox. No domain setup is needed.</p>
-    <p role="status">{platformSender?.available === false ? 'Arch9 sending needs the platform update and activation before it can be used.' : platformSender?.ready ? 'Arch9 campaign sending is available.' : 'Arch9 campaign sending is awaiting activation. You can save your sender details now.'}</p>
+  return <article className="email-settings-card email-arch9-sender" aria-label="Send through Arch9">
+    <div className="email-settings-card-heading">
+      <span className="email-settings-icon"><Mail size={20} aria-hidden="true" /></span>
+      <div><h3>Sender details</h3><p>Choose the name recipients see and the inbox that receives their replies.</p></div>
+    </div>
+    <div className="email-platform-address"><span>Sending address</span><strong>{ARCH9_CAMPAIGN_EMAIL}</strong></div>
+    {platformSender?.available === false && <p className="wa-notice" role="status">Arch9 sending needs activation before it can be used.</p>}
     <form onSubmit={async event => {
       event.preventDefault()
       if (unavailable) return
@@ -25,9 +29,10 @@ export default function Arch9CampaignSenderForm({ organisationId, identity, plat
       } catch (cause) { setError(cause.message || 'The Arch9 sender could not be saved.') }
       finally { setBusy(false) }
     }}>
-      <label>Arch9 sender name<input required maxLength={120} value={name} onChange={event => setName(event.target.value)} placeholder="Your organisation" disabled={unavailable} /></label>
-      <small>Recipients see “{name.trim() || 'Your organisation'} via Arch9”.</small>
-      <label>Arch9 reply-to inbox<input required type="email" value={replyTo} onChange={event => setReplyTo(event.target.value)} placeholder="office@yourcompany.co.za" disabled={unavailable} /></label>
+      <div className="email-arch9-fields">
+        <div><label>Sender name<input required maxLength={120} value={name} onChange={event => setName(event.target.value)} placeholder="Your organisation" disabled={unavailable} aria-describedby="arch9-sender-preview" /></label><small id="arch9-sender-preview">Recipients see “{name.trim() || 'Your organisation'} via Arch9”.</small></div>
+        <div><label>Reply-to inbox<input required type="email" value={replyTo} onChange={event => setReplyTo(event.target.value)} placeholder="office@yourcompany.co.za" disabled={unavailable} aria-describedby="arch9-reply-help" /></label><small id="arch9-reply-help">Use an existing inbox where your team can receive replies.</small></div>
+      </div>
       <label className="email-default-choice"><input type="checkbox" checked={makeDefault} onChange={event => setMakeDefault(event.target.checked)} disabled={unavailable} /> Use Arch9 as the default sender</label>
       <button type="submit" className="wa-primary-button" disabled={unavailable}>{busy ? 'Saving…' : 'Save Arch9 sender'}</button>
     </form>

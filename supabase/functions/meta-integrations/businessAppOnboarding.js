@@ -40,6 +40,8 @@ export async function finishWhatsAppAuthorization({db,org,actor,payload,session,
   const existing=await result(db.from('organisation_communication_channels').select('id,organisation_id,owner_user_id').eq('phone_number_id',phoneId).eq('provider','meta').eq('channel_type','whatsapp').eq('connection_status','connected').maybeSingle())
   if(existing&&existing.organisation_id!==org)throw Error('This phone number is already connected to another workspace.')
   const own=existing||await result(db.from('organisation_communication_channels').select('id,owner_user_id').eq('organisation_id',org).eq('phone_number_id',phoneId).eq('provider','meta').eq('channel_type','whatsapp').maybeSingle())
+  if(session.owner_user_id&&session.owner_user_id!==actor.userId)throw Error('Only the owner can connect a personal WhatsApp number.')
+  if(own&&(own.owner_user_id||null)!==(session.owner_user_id||null))throw Error('This number already has a different inbox owner. Reconnect with its existing owner; change ownership separately in WhatsApp settings.')
   if(!actor.isAdmin&&(session.owner_user_id!==actor.userId||(own&&own.owner_user_id!==actor.userId)))throw Error('An administrator must transfer an existing agency or agent number.')
   await graph(token,`${wabaId}/subscribed_apps`,{})
   const metadata={at:now().toISOString(),display_phone_number:text(phone.display_phone_number),business_display_name:text(phone.verified_name)||text(business.name),connection_status:session.coexistence||phone.status==='CONNECTED'?'connected':'pending',verification_status:phone.code_verification_status==='VERIFIED'||session.coexistence?'verified':'pending',is_on_biz_app:phone.is_on_biz_app===true,platform_type:text(phone.platform_type)}

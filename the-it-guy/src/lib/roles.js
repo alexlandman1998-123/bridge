@@ -83,7 +83,7 @@ const RENTAL_NAV = Object.freeze({
     { key: 'rental_dashboard', label: 'Dashboard', to: '/agent/rentals/long-term/dashboard', activeMatch: ['/agent/rentals/dashboard', '/agent/rentals/long-term/dashboard'] },
     { key: 'rental_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads', activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/applications'] },
     { key: 'rental_listings', label: 'Listings', to: '/agent/rentals/listings', activeMatch: ['/agent/rentals/vacancies', '/agent/rentals/listings'] },
-    { key: 'rental_clients', label: 'Clients', to: '/clients', activeMatch: ['/clients'] },
+    { key: 'rental_clients', label: 'Contacts', to: '/clients', activeMatch: ['/clients'] },
     { key: 'rental_tenancies', label: 'Tenancies', to: '/agent/rentals/tenancies', activeMatch: ['/agent/rentals/tenancies'] },
     {
       key: 'rental_operations',
@@ -159,7 +159,7 @@ export const APP_NAV_BY_ROLE = {
         { key: 'developer_agencies', label: 'Agencies', to: '/developer/partners?type=agency', icon: Building2 },
       ],
     },
-    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'clients', label: 'Contacts', to: '/clients' },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ],
   agent: [
@@ -196,7 +196,7 @@ export const APP_NAV_BY_ROLE = {
       ],
     },
     // Auctions is paused; keep it out of navigation until work resumes.
-    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'clients', label: 'Contacts', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
@@ -581,7 +581,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       { key: 'assistant_transactions', label: 'Transactions', to: '/transactions' },
       { key: 'assistant_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
       { key: 'assistant_documents', label: 'Documents', to: '/documents' },
-      { key: 'assistant_clients', label: 'Clients', to: '/clients' },
+      { key: 'assistant_clients', label: 'Contacts', to: '/clients' },
     ], hqContext)
   }
 
@@ -636,7 +636,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         ...(!isBranchManager ? [{ key: 'agency_commission', label: 'Commission', to: '/agency/commission' }] : []),
       ],
     },
-    { key: 'clients', label: 'Clients', to: '/clients' },
+    { key: 'clients', label: 'Contacts', to: '/clients' },
   ], hqContext)
 
 }

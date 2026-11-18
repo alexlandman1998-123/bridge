@@ -22,14 +22,37 @@ it('puts ownership behind a dropdown and saves only after confirmation',async()=
 })
 it('opens a clear add-number dialog and preserves phone-app mode during preparation',async()=>{
  mount();fireEvent.click(screen.getByRole('button',{name:'Add number'}));expect(screen.getByRole('dialog',{name:'Add WhatsApp number'})).toBeTruthy();expect(metaIntegrationRequest).not.toHaveBeenCalled();expect(screen.getByLabelText('Number setup').value).toBe('phone')
- fireEvent.change(screen.getByLabelText('Inbox'),{target:{value:'user-a'}});fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'});expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:'user-a',coexistence:true});expect(screen.getByText(/Connecting for: My inbox/)).toBeTruthy()
+ expect(screen.getByLabelText('Inbox').value).toBe('self');fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'});expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:'user-a',coexistence:true});expect(screen.getByText(/Connecting for: My inbox/)).toBeTruthy()
 })
 it('supports a platform-only shared number without conflating its setup with ownership',async()=>{
- mount();fireEvent.click(screen.getByRole('button',{name:'Add number'}));fireEvent.change(screen.getByLabelText('Number setup'),{target:{value:'platform'}});fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'});expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:null,coexistence:false})
+ mount();fireEvent.click(screen.getByRole('button',{name:'Add number'}));fireEvent.change(screen.getByLabelText('Inbox'),{target:{value:''}});expect(screen.getByRole('button',{name:'Continue',exact:true}).disabled).toBe(true);fireEvent.click(screen.getByRole('checkbox',{name:/I understand this is a company number/}));fireEvent.change(screen.getByLabelText('Number setup'),{target:{value:'platform'}});fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'});expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:null,coexistence:false,confirmWorkspaceSharing:true})
 })
 it('restricts a personal connector to their own inbox',async()=>{
- state.workspace={...state.workspace,canManage:false,senders:[{...sender,owner_user_id:'user-a'}]};mount();expect(screen.queryByRole('combobox',{name:'Inbox owner'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Add number'}));expect(screen.queryByRole('combobox',{name:'Inbox'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'});expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:'user-a',coexistence:true})
+ state.workspace={...state.workspace,canManage:false,senders:[{...sender,owner_user_id:'user-a'}]};mount();expect(screen.getByRole('combobox',{name:'Inbox owner'}).value).toBe('user-a');fireEvent.click(screen.getByRole('button',{name:'Add number'}));expect(screen.queryByRole('combobox',{name:'Inbox'})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'});expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:'user-a',coexistence:true})
 })
 it('closes configuration when switching organisation',()=>{
  const view=mount();fireEvent.click(screen.getByRole('button',{name:'Add number'}));state.workspace={...state.workspace,organisationId:'org-b',accessScope:'org-b:user-a'};view.rerender(<MemoryRouter><SettingsWhatsAppPage/></MemoryRouter>);expect(screen.queryByRole('dialog')).toBeNull();expect(metaIntegrationRequest).not.toHaveBeenCalled()
+})
+
+it('requires separate acknowledgement before making an agent number and all of its history shared',async()=>{
+ state.workspace={...state.workspace,senders:[{...sender,owner_user_id:'user-a'}]};mount()
+ fireEvent.change(screen.getByLabelText('Inbox owner'),{target:{value:''}})
+ const save=screen.getByRole('button',{name:'Save ownership'});expect(save.disabled).toBe(true)
+ expect(metaIntegrationRequest).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('checkbox',{name:/all existing conversations/}));fireEvent.click(save)
+ await waitFor(()=>expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','set_sender_owner',{senderId:'sender-a',ownerUserId:null,ownershipVersion:3,confirmWorkspaceSharing:true}))
+})
+it('clears acknowledgement when switching the intended inbox and starts new setup with my inbox',()=>{
+ mount();fireEvent.click(screen.getByRole('button',{name:'Add number'}))
+ fireEvent.change(screen.getByLabelText('Inbox'),{target:{value:''}})
+ fireEvent.click(screen.getByRole('checkbox',{name:/I understand this is a company number/}))
+ fireEvent.change(screen.getByLabelText('Inbox'),{target:{value:'self'}})
+ fireEvent.change(screen.getByLabelText('Inbox'),{target:{value:''}})
+ expect(screen.getByRole('checkbox',{name:/I understand this is a company number/}).checked).toBe(false)
+ expect(screen.getByRole('button',{name:'Continue',exact:true}).disabled).toBe(true)
+})
+
+it('does not offer an administrator ownership controls for another person’s personal number',()=>{
+ state.workspace={...state.workspace,senders:[{...sender,owner_user_id:'user-b'}]};mount()
+ expect(screen.queryByRole('combobox',{name:'Inbox owner'})).toBeNull()
 })

@@ -1,3 +1,4 @@
+import {checkSignatureImages} from './signatureImagesDatabase.test.mjs'
 import assert from 'node:assert/strict'
 import { readFile, readdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -9,6 +10,7 @@ import './inboxSignature.test.js'
 import { checkMailboxJourney } from './mailboxJourney.test.mjs'
 import { checkSending } from './sendingDatabase.test.mjs'
 import { checkReceiving } from './receivingDatabase.test.mjs'
+import { checkExplicitSharing } from './explicitSharingDatabase.test.mjs'
 import { checkEmailSettings } from './emailSettingsDatabase.test.mjs'
 
 for (const key of ['dashboard', 'assistant_dashboard', 'rental_dashboard', 'short_term_dashboard']) {
@@ -84,6 +86,10 @@ try {
   await checkReceiving(db, { A, B, admin, member })
   await checkSending(db, { A, B, admin, member })
   await checkMailboxJourney(db, { A, B, admin, member })
+  await db.exec('reset role')
+  await db.exec(await readFile(resolve(migrations, '20261110092026_inbox_explicit_sharing_safety.sql'), 'utf8'))
+  await checkExplicitSharing(db, { A, B, admin, member, outsider })
+  await checkSignatureImages(db, { A, admin, member })
   await db.exec(`reset role; update organisation_users set status='suspended' where user_id='${member}';`)
   await as(member)
   assert.equal((await db.query('select * from revo_inbox_messages')).rows.length, 0)

@@ -16,7 +16,7 @@ Deno.test('a custom-domain check failure does not block the independent platform
     globalThis.fetch = (async (input: any, options: any = {}) => {
       const url = String(input);
       const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-      if (url.endsWith('/rpc/email_campaign_can_send')) return json(true);
+      if (url.endsWith('/rpc/email_domain_can_manage')) return json(true);
       if (url.includes('/email_sending_domains?')) {
         assert(url.includes('organisation_id=eq.org'), 'Custom domains must be organisation scoped');
         return json([{ id: 'custom', domain_name: 'updates.custom.co.za', provider_domain_id: 'custom-domain', verification_status: 'verified' }]);

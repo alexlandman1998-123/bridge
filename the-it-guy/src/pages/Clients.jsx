@@ -14,6 +14,7 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Tags,
   Trash2,
   Upload,
   User2,
@@ -32,6 +33,7 @@ import SearchInput from '../components/ui/SearchInput'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import ClientAudiences from '../components/clients/ClientAudiences'
 import RentalClientImportModal from '../components/clients/RentalClientImportModal'
+import AgencyContactBulkImportModal from '../components/clients/AgencyContactBulkImportModal'
 import { BUSINESS_WORKSPACES } from '../lib/businessWorkspaceAccess'
 import {
   loadAgentClientDirectory,
@@ -70,7 +72,7 @@ function loadLegacyClientApi() {
 }
 
 const CLIENT_SEGMENTS = [
-  { key: 'all', label: 'All Clients', icon: Users },
+  { key: 'all', label: 'All Contacts', icon: Users },
   { key: 'buyer', label: 'Buyers', icon: UserRoundSearch },
   { key: 'seller', label: 'Sellers', icon: Home },
   { key: 'investor', label: 'Investors', icon: CircleDollarSign },
@@ -124,13 +126,13 @@ const ATTORNEY_STATUS_FILTERS = [
 ]
 
 const DEFAULT_CLIENT_DIRECTORY_COPY = {
-  searchPlaceholder: 'Search clients by name, email, phone, tag or property...',
+  searchPlaceholder: 'Search contacts by name, email, phone, tag or property...',
   addLabel: 'Add New Contact',
   allAssigneesLabel: 'All Agents',
   assigneeLabel: 'Agent',
   linkedRecordHeader: 'Linked Transaction',
   linkedRecordFallback: 'No linked transaction',
-  profileLabel: 'Client profile',
+  profileLabel: 'Contact profile',
   activeStatusLabel: 'Active Transaction',
   modalTitle: 'Add New Contact',
   modalSubtitle: 'Capture the contact and what they are looking to buy, sell, invest in, rent or let.',
@@ -637,7 +639,7 @@ function getEmptyCopy(segmentKey = 'all', copy = DEFAULT_CLIENT_DIRECTORY_COPY) 
   const meta = ROLE_META[segmentKey]
   if (!meta) {
     return {
-      title: 'No clients found',
+      title: 'No contacts found',
       detail: 'Buyers, sellers, prospects and active transaction contacts will appear here once added.',
     }
   }
@@ -736,10 +738,13 @@ export function AddClientModal({
   className = '',
   matterOptions = [],
   organisationId = null,
+  allowCaptureChoice = false,
+  onBulkImport,
 }) {
   const [form, setForm] = useState(() => getEmptyAddClientForm(copy))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [captureStep, setCaptureStep] = useState(allowCaptureChoice ? 'choose' : 'single')
   const isAttorneyMode = mode === 'attorney'
   const isAgencyMode = mode === 'agent'
 
@@ -748,15 +753,16 @@ export function AddClientModal({
       setForm(getEmptyAddClientForm(copy))
       setSaving(false)
       setError('')
+      setCaptureStep(allowCaptureChoice ? 'choose' : 'single')
     }
-  }, [copy, open])
+  }, [allowCaptureChoice, copy, open])
 
   async function handleSave() {
     try {
       setSaving(true)
       setError('')
       if (!String(form.name || '').trim()) {
-        throw new Error(isAttorneyMode ? 'Party name is required.' : 'Client name is required.')
+        throw new Error(isAttorneyMode ? 'Party name is required.' : 'Contact name is required.')
       }
       if (isAttorneyMode) {
         await onSaved?.(form)
@@ -796,20 +802,34 @@ export function AddClientModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={title || copy.modalTitle}
-      subtitle={subtitle !== undefined ? subtitle : copy.modalSubtitle}
+      title={title || (captureStep === 'choose' ? 'Add contact' : copy.modalTitle)}
+      subtitle={subtitle !== undefined ? subtitle : captureStep === 'choose' ? 'Choose how you want to add contacts.' : copy.modalSubtitle}
       className={className}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : copy.modalSaveLabel}
-          </Button>
+          {captureStep === 'single' ? <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : copy.modalSaveLabel}</Button> : null}
         </>
       }
     >
+      {captureStep === 'choose' ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button type="button" className="group rounded-xl border border-[#dfe3e8] bg-white p-5 text-left transition hover:border-[#9bc7b4] hover:bg-[#fbfdfc]" onClick={() => setCaptureStep('single')}>
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef5f1] text-[#17634d]"><Plus size={18} /></span>
+            <strong className="mt-4 block text-base font-semibold text-[#202a33]">Single contact</strong>
+            <span className="mt-1 block text-sm leading-5 text-[#74808a]">Enter one person’s details and contact type.</span>
+          </button>
+          <button type="button" className="group rounded-xl border border-[#dfe3e8] bg-white p-5 text-left transition hover:border-[#9bc7b4] hover:bg-[#fbfdfc]" onClick={() => onBulkImport?.()}>
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef5f1] text-[#17634d]"><Upload size={18} /></span>
+            <strong className="mt-4 block text-base font-semibold text-[#202a33]">Bulk upload</strong>
+            <span className="mt-1 block text-sm leading-5 text-[#74808a]">Import a spreadsheet or CSV and review it before saving.</span>
+          </button>
+        </div>
+      ) : null}
+      {captureStep === 'single' && allowCaptureChoice ? <button type="button" className="mb-4 text-sm font-medium text-[#17634d] hover:underline" onClick={() => { setCaptureStep('choose'); setError('') }}>← Choose another option</button> : null}
+      {captureStep === 'single' ? (
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="grid gap-2 sm:col-span-2">
           <span className="text-sm font-medium text-slate-600">{copy.nameLabel || 'Full Name / Entity Name'}</span>
@@ -932,6 +952,7 @@ export function AddClientModal({
           </p>
         ) : null}
       </div>
+      ) : null}
     </Modal>
   )
 }
@@ -951,7 +972,41 @@ function ClientAudiencesTab({ audiences = [], loading, error, organisationId, us
       setName(''); setTag(''); setDescription(''); await onSaved()
     } catch (cause) { setSaveError(cause.message || 'Unable to save this audience.') } finally { setSaving(false) }
   }
-  return <section className="p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#73879d]">Audiences</p><h3 className="mt-1 text-xl font-semibold text-[#10243a]">Reusable bulk-email segments</h3><p className="mt-1 max-w-2xl text-sm leading-6 text-[#637890]">Saved audiences use client tags, but recipient eligibility is still checked at send time for consent, subscriptions, suppression and deduplication.</p></div></div><div className="mt-5 grid gap-4 rounded-[18px] border border-[#dfe9f3] bg-[#fbfdff] p-4 lg:grid-cols-3"><label className="grid gap-1.5 text-sm font-semibold text-[#35516c]">Audience name<input className="min-h-10 rounded-xl border border-[#d7e3ef] bg-white px-3 font-normal" value={name} onChange={(event) => setName(event.target.value)} placeholder="Show day buyers" /></label><label className="grid gap-1.5 text-sm font-semibold text-[#35516c]">Client tag<input className="min-h-10 rounded-xl border border-[#d7e3ef] bg-white px-3 font-normal" value={tag} onChange={(event) => setTag(event.target.value)} placeholder="show-day" /></label><label className="grid gap-1.5 text-sm font-semibold text-[#35516c]">Description <span className="font-normal text-[#73879d]">Optional</span><input className="min-h-10 rounded-xl border border-[#d7e3ef] bg-white px-3 font-normal" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Visitors to recent show days" /></label><div className="lg:col-span-3 flex items-center justify-between gap-3"><p className="text-sm text-[#b42318]">{saveError || error}</p><Button type="button" onClick={() => void save()} disabled={loading || saving}>{saving ? 'Saving…' : 'Save audience'}</Button></div></div><div className="mt-5 grid gap-3 md:grid-cols-2">{loading ? <LoadingSkeleton lines={3} /> : audiences.map((audience) => <article key={audience.id} className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="font-semibold text-[#17334f]">{audience.name}</p><p className="mt-1 text-sm text-[#687e95]">{audience.description || 'No description'}</p><span className="mt-3 inline-flex rounded-full bg-[#eef6ff] px-2.5 py-1 text-xs font-semibold text-[#26629a]">Tag: {audience.filter_json?.tag || 'Custom filter'}</span></article>)}{!loading && !audiences.length ? <p className="rounded-[16px] border border-dashed border-[#d6e2ee] p-5 text-sm text-[#687e95]">No saved audiences yet. Create one from a client tag above.</p> : null}</div></section>
+  return (
+    <section className="p-4 sm:p-5">
+      <header className="mb-5">
+        <h2 className="text-lg font-semibold text-[#202a33]">Audiences</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-5 text-[#66727b]">
+          Create reusable email groups from contact tags. Consent and subscription checks still apply when a campaign is sent.
+        </p>
+      </header>
+      <div className="grid gap-3 rounded-xl border border-[#dfe3e8] bg-white p-4 lg:grid-cols-3">
+        <label className="grid gap-1.5 text-sm font-medium text-[#596671]">Audience name
+          <input className="min-h-10 rounded-lg border border-[#dfe3e8] bg-white px-3 font-normal text-[#202a33]" value={name} onChange={(event) => setName(event.target.value)} placeholder="Show day buyers" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-[#596671]">Contact tag
+          <input className="min-h-10 rounded-lg border border-[#dfe3e8] bg-white px-3 font-normal text-[#202a33]" value={tag} onChange={(event) => setTag(event.target.value)} placeholder="show-day" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-medium text-[#596671]">Description <span className="font-normal text-[#74808a]">Optional</span>
+          <input className="min-h-10 rounded-lg border border-[#dfe3e8] bg-white px-3 font-normal text-[#202a33]" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Visitors to recent show days" />
+        </label>
+        <div className="flex items-center justify-between gap-3 lg:col-span-3">
+          <p className="text-sm text-[#b42318]">{saveError || error}</p>
+          <Button type="button" onClick={() => void save()} disabled={loading || saving}>{saving ? 'Saving…' : 'Save audience'}</Button>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {loading ? <LoadingSkeleton lines={3} /> : audiences.map((audience) => (
+          <article key={audience.id} className="rounded-xl border border-[#dfe3e8] bg-white p-4">
+            <p className="font-semibold text-[#202a33]">{audience.name}</p>
+            <p className="mt-1 text-sm text-[#66727b]">{audience.description || 'No description'}</p>
+            <span className="mt-3 inline-flex rounded-md bg-[#f1f3f4] px-2.5 py-1 text-xs font-medium text-[#596671]">Tag: {audience.filter_json?.tag || 'Custom filter'}</span>
+          </article>
+        ))}
+        {!loading && !audiences.length ? <p className="rounded-xl border border-dashed border-[#dfe3e8] p-5 text-sm text-[#66727b]">No saved audiences yet. Create one from a contact tag above.</p> : null}
+      </div>
+    </section>
+  )
 }
 
 function Clients() {
@@ -980,6 +1035,7 @@ function Clients() {
   const [deleteClientTarget, setDeleteClientTarget] = useState(null)
   const [deletingClient, setDeletingClient] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showContactImport, setShowContactImport] = useState(false)
   const [showRentalImport, setShowRentalImport] = useState(false)
   const [directoryTab, setDirectoryTab] = useState('clients')
   const [activityWarning, setActivityWarning] = useState('')
@@ -1011,6 +1067,7 @@ function Clients() {
   const directoryRoleOptions = isAttorneyClientDirectory ? ATTORNEY_CLIENT_ROLE_OPTIONS : isRentalClientsDirectory ? [...CLIENT_ROLE_OPTIONS, { key: 'landlord', label: 'Landlords' }] : CLIENT_ROLE_OPTIONS
   const directoryStatusFilters = isAttorneyClientDirectory ? ATTORNEY_STATUS_FILTERS : AGENT_STATUS_FILTERS
   const selectedDevelopmentId = searchParams.get('developmentId') || 'all'
+  const selectedContactTag = String(searchParams.get('tag') || '').trim().toLowerCase()
   const activeOrganisationId = String(
     organisation?.id ||
       workspace?.organisationId ||
@@ -1199,6 +1256,7 @@ function Clients() {
         .filter((client) => {
           if (!clientHasRole(client, activeFilter)) return false
           if (!clientHasRole(client, roleFilter)) return false
+          if (selectedContactTag && !(client.tags || []).some((tag) => String(tag).trim().toLowerCase() === selectedContactTag)) return false
           const statusKeys = isAttorneyClientDirectory ? getClientMatterStatusKeys(client) : (client.statusKeys || [client.status].filter(Boolean))
           if (statusFilter !== 'all' && !statusKeys.map(normalizeDirectoryOptionKey).includes(normalizeDirectoryOptionKey(statusFilter))) return false
           if (isAttorneyClientDirectory && matterTypeFilter !== 'all' && !getClientMatterTypeKeys(client).includes(normalizeDirectoryOptionKey(matterTypeFilter))) return false
@@ -1226,7 +1284,7 @@ function Clients() {
           return searchHaystack.includes(normalizedSearch)
         })
     },
-    [activeFilter, archivedClientIds, assignedAgentFilter, clients, complianceFilter, deletedClientIds, directoryCopy.linkedRecordFallback, isAttorneyClientDirectory, matterTypeFilter, roleFilter, search, statusFilter],
+    [activeFilter, archivedClientIds, assignedAgentFilter, clients, complianceFilter, deletedClientIds, directoryCopy.linkedRecordFallback, isAttorneyClientDirectory, matterTypeFilter, roleFilter, search, selectedContactTag, statusFilter],
   )
   const summaryStats = useMemo(() => {
     const visibleClients = (clients || []).filter((client) => !clientMatchesStoredId(client, new Set(archivedClientIds)))
@@ -1298,6 +1356,15 @@ function Clients() {
     }
     return counts
   }, [clients, directorySegments])
+  const contactTagOptions = useMemo(() => {
+    const counts = new Map()
+    for (const client of clients || []) {
+      for (const tag of new Set((client.tags || []).map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))) {
+        counts.set(tag, (counts.get(tag) || 0) + 1)
+      }
+    }
+    return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([tag, count]) => ({ tag, count }))
+  }, [clients])
 
   function handleViewModeChange(nextMode) {
     setViewMode(nextMode)
@@ -1306,6 +1373,7 @@ function Clients() {
   function handleSegmentChange(nextFilter) {
     setActiveFilter(nextFilter)
     const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('tag')
     if (nextFilter === 'all') {
       nextParams.delete('view')
       nextParams.delete('type')
@@ -1313,6 +1381,17 @@ function Clients() {
       nextParams.set('view', nextFilter)
       nextParams.delete('type')
     }
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  function handleContactTagChange(nextTag) {
+    setActiveFilter('all')
+    setRoleFilter('all')
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('view')
+    nextParams.delete('type')
+    if (nextTag) nextParams.set('tag', nextTag)
+    else nextParams.delete('tag')
     setSearchParams(nextParams, { replace: true })
   }
 
@@ -1439,72 +1518,73 @@ function Clients() {
       data-performance-settled={isPrimaryAgentClientsRoute ? (loading ? 'false' : 'true') : undefined}
     >
       {showRentalImport && isRentalClientsDirectory ? <RentalClientImportModal key={activeOrganisationId} organisationId={activeOrganisationId} actorId={profile?.id} existingClients={clients} onClose={() => setShowRentalImport(false)} onImported={() => loadData({ forceRefresh: true })} /> : null}
-      {!isAgentClientDirectory || directoryTab === 'clients' ? <section className="grid gap-4 xl:grid-cols-4">
+      {showContactImport && isAgentClientDirectory ? <AgencyContactBulkImportModal key={activeOrganisationId} organisationId={activeOrganisationId} existingContacts={clients} onClose={() => setShowContactImport(false)} onImported={() => loadData({ forceRefresh: true })} /> : null}
+      <section className="grid gap-4 xl:grid-cols-4">
         {[
           isAttorneyClientDirectory
-            ? { label: 'Total Parties', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Matter party directory' : `${filteredClients.length} currently shown` }
-            : { label: 'Total Clients', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Complete CRM view' : `${filteredClients.length} currently shown` },
+            ? { label: 'Total Parties', value: summaryStats.total, icon: Users, helper: filteredClients.length === summaryStats.total ? 'Matter party directory' : `${filteredClients.length} currently shown` }
+            : { label: 'Total Contacts', value: summaryStats.total, icon: Users, helper: filteredClients.length === summaryStats.total ? 'Complete CRM view' : `${filteredClients.length} currently shown` },
           isAttorneyClientDirectory
-            ? { label: 'Clients', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#f9fbff] via-white to-[#f6f9ff]', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Matter clients and purchasers' }
-            : { label: 'Buyers', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#f9fbff] via-white to-[#f6f9ff]', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Buyer leads and active buyers' },
+            ? { label: 'Clients', value: summaryStats.buyers, icon: UserRoundSearch, helper: 'Matter clients and purchasers' }
+            : { label: 'Buyers', value: summaryStats.buyers, icon: UserRoundSearch, helper: 'Buyer leads and active buyers' },
           isAttorneyClientDirectory
-            ? { label: 'Counterparties', value: summaryStats.sellers, icon: Home, tint: 'from-[#f8fcf8] via-white to-[#f5fbf7]', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Other side parties' }
-            : { label: 'Sellers', value: summaryStats.sellers, icon: Home, tint: 'from-[#f8fcf8] via-white to-[#f5fbf7]', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Seller leads and mandates' },
+            ? { label: 'Counterparties', value: summaryStats.sellers, icon: Home, helper: 'Other side parties' }
+            : { label: 'Sellers', value: summaryStats.sellers, icon: Home, helper: 'Seller leads and mandates' },
           isAttorneyClientDirectory
-            ? { label: 'Active Matters', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#fbf9ff] via-white to-[#f7f4ff]', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active matter records' }
-            : { label: 'Active Transactions', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#fbf9ff] via-white to-[#f7f4ff]', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active deal records' },
+            ? { label: 'Active Matters', value: summaryStats.activeTransactions, icon: Handshake, helper: 'Linked active matter records' }
+            : { label: 'Active Transactions', value: summaryStats.activeTransactions, icon: Handshake, helper: 'Linked active deal records' },
         ].map((item) => {
           const Icon = item.icon
           return (
-            <article key={item.label} className={`rounded-[24px] border border-[#dbe5ef] bg-gradient-to-br ${item.tint} p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] backdrop-blur-[2px]`}>
-              <div className="flex items-center gap-4">
-                <span className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${item.iconClass}`}>
-                  <Icon size={22} />
-                </span>
+            <article key={item.label} className="min-h-[116px] rounded-xl border border-[#dfe3e8] bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#71849b]">{item.label}</p>
-                  <strong className="mt-1 block text-[1.75rem] leading-none tracking-[-0.04em] text-[#112238]">{item.value}</strong>
-                  <span className="mt-2 block truncate text-xs font-medium text-[#61758c]">{item.helper}</span>
+                  <p className="text-sm font-medium text-[#596671]">{item.label}</p>
+                  <strong className="mt-2 block text-3xl font-semibold leading-none tracking-normal text-[#202a33]">{item.value}</strong>
+                  <span className="mt-2 block truncate text-xs font-normal text-[#74808a]">{item.helper}</span>
                 </div>
+                <Icon size={17} className="mt-0.5 shrink-0 text-[#83908a]" aria-hidden="true" />
               </div>
             </article>
           )
         })}
-      </section> : null}
+      </section>
 
-      <section className="overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-white/92 shadow-[0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-xl">
-        {isAgentClientDirectory ? <nav aria-label="Client workspace" className="grid grid-cols-2 border-b border-[#e6edf5] bg-[#fbfdff]">{[{ key: 'clients', label: 'Clients' }, { key: 'audiences', label: 'Audiences' }].map(tab => <button key={tab.key} type="button" aria-pressed={directoryTab === tab.key} className={`border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${directoryTab === tab.key ? 'border-[#248568] bg-white text-[#17634d]' : 'border-transparent text-[#62778e] hover:bg-white'}`} onClick={() => setDirectoryTab(tab.key)}>{tab.label}</button>)}</nav> : null}
+      <section className="overflow-hidden rounded-2xl border border-[#dfe3e8] bg-white">
+        {isAgentClientDirectory ? <nav aria-label="Contact workspace" className="grid grid-cols-2 border-b border-[#e4e8eb] bg-white">{[{ key: 'clients', label: 'Contacts' }, { key: 'audiences', label: 'Audiences' }].map(tab => <button key={tab.key} type="button" aria-pressed={directoryTab === tab.key} className={`border-b-2 px-4 py-4 text-sm font-semibold transition-colors ${directoryTab === tab.key ? 'border-[#248568] bg-white text-[#17634d]' : 'border-transparent text-[#627078] hover:bg-[#f8faf9]'}`} onClick={() => setDirectoryTab(tab.key)}>{tab.label}</button>)}</nav> : null}
         {isAgentClientDirectory && directoryTab === 'audiences' ? <ClientAudiences organisationId={activeOrganisationId} userId={profile?.id} /> : null}
         <div className={isAgentClientDirectory && directoryTab !== 'clients' ? 'hidden' : ''}>
-        <div className={`flex ${isRentalClientsDirectory ? 'flex-wrap' : ''} items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3`}>
-          <div className={`grid min-w-0 flex-1 ${isRentalClientsDirectory ? 'basis-full lg:basis-0' : ''} grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6`}>
-            {directorySegments.map((segment) => {
-              const Icon = segment.icon
-              const active = activeFilter === segment.key
-              return (
-                <button
-                  key={segment.key}
-                  type="button"
-                  className={`flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[18px] px-3 text-sm font-semibold transition ${
-                    active
-                      ? 'bg-white text-[#0f63c7] shadow-[0_8px_18px_rgba(15,23,42,0.08)] ring-1 ring-[#dbe7f3]'
-                      : 'text-[#51657c] hover:bg-white/70 hover:text-[#10243a]'
-                  }`}
-                  onClick={() => handleSegmentChange(segment.key)}
-                >
-                  <Icon size={16} />
-                  <span className="whitespace-nowrap">{segment.label}</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[0.68rem] ${active ? 'bg-[#e8f2ff] text-[#0f63c7]' : 'bg-[#eef3f8] text-[#6b7d93]'}`}>
-                    {segmentCounts[segment.key] || 0}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-          {isRentalClientsDirectory ? <Button type="button" variant="secondary" className="self-center" disabled={loading || !activeOrganisationId} onClick={() => setShowRentalImport(true)}><Upload size={16} />Import clients</Button> : null}
+        <div className={`flex ${isRentalClientsDirectory ? 'flex-wrap' : ''} items-stretch gap-3 border-b border-[#e4e8eb] bg-white px-3 py-3`}>
+          {isAttorneyClientDirectory ? (
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+              {directorySegments.map((segment) => {
+                const Icon = segment.icon
+                const active = activeFilter === segment.key
+                return (
+                  <button
+                    key={segment.key}
+                    type="button"
+                    className={`flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-transparent px-3 text-sm font-medium transition ${
+                      active
+                        ? 'bg-white text-[#17634d] ring-1 ring-[#9bc7b4]'
+                        : 'text-[#596671] hover:bg-[#f7f9f8] hover:text-[#202a33]'
+                    }`}
+                    onClick={() => handleSegmentChange(segment.key)}
+                  >
+                    <Icon size={16} />
+                    <span className="whitespace-nowrap">{segment.label}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[0.68rem] ${active ? 'bg-[#e8f2ff] text-[#0f63c7]' : 'bg-[#eef3f8] text-[#6b7d93]'}`}>
+                      {segmentCounts[segment.key] || 0}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : <div className="min-w-0 flex-1" />}
+          {isRentalClientsDirectory ? <Button type="button" variant="secondary" className="self-center" disabled={loading || !activeOrganisationId} onClick={() => setShowRentalImport(true)}><Upload size={16} />Import contacts</Button> : null}
           <button
             type="button"
-            className="ml-auto hidden min-h-[54px] shrink-0 items-center justify-center gap-2 rounded-[18px] border border-[#dbe5ef] bg-white/80 px-4 text-sm font-semibold text-[#4f647d] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-white hover:text-[#10243a] lg:inline-flex"
+            className="ml-auto hidden min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dfe3e8] bg-white px-4 text-sm font-medium text-[#4c5963] transition hover:bg-[#f8faf9] hover:text-[#202a33] lg:inline-flex"
             onClick={() => setShowAddModal(true)}
           >
             <Plus size={16} />
@@ -1669,7 +1749,7 @@ function Clients() {
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
-                          <button type="button" className="flex items-center gap-2 rounded-[12px] px-3 py-2 text-left text-[#b42318] hover:bg-[#fff5f5]" onClick={(event) => handleQuickAction(event, client, 'delete')}><Trash2 size={15} />Delete client</button>
+                          <button type="button" className="flex items-center gap-2 rounded-[12px] px-3 py-2 text-left text-[#b42318] hover:bg-[#fff5f5]" onClick={(event) => handleQuickAction(event, client, 'delete')}><Trash2 size={15} />{isAttorneyClientDirectory ? 'Delete client' : 'Delete contact'}</button>
                         </div>
                       ) : null}
                     </div>
@@ -1681,6 +1761,7 @@ function Clients() {
                       <div className="mt-2">
                         <TypeBadges client={client} copy={directoryCopy} />
                       </div>
+                  {client.tags?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{client.tags.slice(0, 3).map((tag) => <span key={tag} className="inline-flex max-w-full items-center gap-1 rounded-md border border-[#dce8e0] bg-[#f5f9f6] px-2 py-1 text-[0.68rem] font-medium text-[#486453]"><Tags size={11} className="shrink-0" /><span className="truncate">{tag}</span></span>)}{client.tags.length > 3 ? <span className="rounded-md bg-[#f1f3f4] px-2 py-1 text-[0.68rem] font-medium text-[#596671]">+{client.tags.length - 3}</span> : null}</div> : null}
                     </div>
                     <div className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${meta.soft} text-sm font-bold`}>
                       {getInitials(client.name)}
@@ -1812,6 +1893,7 @@ function Clients() {
                           <div className="min-w-0">
                             <p className="truncate font-semibold text-[#142132]">{client.name}</p>
                             <p className="truncate text-xs text-[#6b7d93]">{directoryCopy.profileLabel}</p>
+                            {client.tags?.length ? <div className="mt-1 flex max-w-[260px] flex-wrap gap-1">{client.tags.slice(0, 3).map((tag) => <span key={tag} className="max-w-full truncate rounded-md bg-[#f1f6f2] px-2 py-0.5 text-[0.68rem] font-medium text-[#486453]">{tag}</span>)}{client.tags.length > 3 ? <span className="text-[0.68rem] text-[#74808a]">+{client.tags.length - 3}</span> : null}</div> : null}
                           </div>
                         </div>
                       </td>
@@ -1876,7 +1958,7 @@ function Clients() {
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
-                              <button type="button" className="flex items-center gap-2 rounded-[12px] px-3 py-2 text-left text-[#b42318] hover:bg-[#fff5f5]" onClick={(event) => handleQuickAction(event, client, 'delete')}><Trash2 size={15} />Delete client</button>
+                              <button type="button" className="flex items-center gap-2 rounded-[12px] px-3 py-2 text-left text-[#b42318] hover:bg-[#fff5f5]" onClick={(event) => handleQuickAction(event, client, 'delete')}><Trash2 size={15} />{isAttorneyClientDirectory ? 'Delete client' : 'Delete contact'}</button>
                             </div>
                           ) : null}
                         </div>
@@ -1888,6 +1970,57 @@ function Clients() {
             </DataTableInner>
           </DataTable>
         ) : null}
+        {!isAttorneyClientDirectory ? (
+          <section aria-labelledby="quick-audiences-heading" className="border-t border-[#e4e8eb] bg-white px-4 py-5 sm:px-6">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 id="quick-audiences-heading" className="text-base font-semibold text-[#202a33]">Quick audiences</h2>
+                <p className="mt-1 text-sm text-[#74808a]">Open a focused view of contacts by role.</p>
+              </div>
+              <span className="text-xs font-medium text-[#74808a]">{directorySegments.length} saved views</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {directorySegments.map((segment) => {
+                const Icon = segment.icon
+                const active = activeFilter === segment.key
+                const total = segmentCounts[segment.key] || 0
+                return (
+                  <button
+                    key={segment.key}
+                    type="button"
+                    aria-pressed={active}
+                    className={`group flex min-h-[76px] items-center gap-3 rounded-xl border px-4 py-3 text-left transition ${active ? 'border-[#248568] bg-[#f2f8f5] shadow-[inset_3px_0_0_#248568]' : 'border-[#dfe3e8] bg-white hover:border-[#b9cfc4] hover:bg-[#fbfdfc]'}`}
+                    onClick={() => handleSegmentChange(segment.key)}
+                  >
+                    <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-[#e1efe8] text-[#17634d]' : 'bg-[#f3f6f5] text-[#697a72] group-hover:text-[#17634d]'}`}>
+                      <Icon size={18} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-[#202a33]">{segment.label}</span>
+                      <span className="mt-0.5 block text-xs text-[#74808a]">{total} {total === 1 ? 'contact' : 'contacts'}</span>
+                    </span>
+                    <span className={`text-lg font-semibold tabular-nums ${active ? 'text-[#17634d]' : 'text-[#53615b]'}`}>{total}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="mt-5 border-t border-[#edf0ee] pt-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Tags size={16} className="text-[#687a70]" aria-hidden="true" />
+                <h3 className="text-sm font-semibold text-[#34443a]">Your tags</h3>
+                <span className="text-xs text-[#74808a]">Filter contacts by custom labels</span>
+              </div>
+              {contactTagOptions.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {contactTagOptions.map(({ tag, count }) => {
+                    const active = selectedContactTag === tag
+                    return <button key={tag} type="button" aria-pressed={active} onClick={() => handleContactTagChange(active ? '' : tag)} className={`inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${active ? 'border-[#248568] bg-[#f2f8f5] text-[#17634d]' : 'border-[#dfe3e8] bg-white text-[#53615b] hover:border-[#b9cfc4] hover:bg-[#fbfdfc]'}`}><span>{tag}</span><span className={`rounded-md px-1.5 py-0.5 text-xs tabular-nums ${active ? 'bg-[#e1efe8] text-[#17634d]' : 'bg-[#f1f3f4] text-[#69736d]'}`}>{count}</span></button>
+                  })}
+                </div>
+              ) : <p className="text-sm text-[#74808a]">No custom tags yet. Open a contact profile and add tags in the Client tags section.</p>}
+            </div>
+          </section>
+        ) : null}
         </div>
       </section>
 
@@ -1898,13 +2031,15 @@ function Clients() {
         mode={isAttorneyClientDirectory ? 'attorney' : isAgentClientDirectory ? 'agent' : 'client'}
         matterOptions={matterOptions}
         organisationId={activeOrganisationId || null}
+        allowCaptureChoice={isAgentClientDirectory}
+        onBulkImport={() => { setShowAddModal(false); setShowContactImport(true) }}
         onSaved={handleAddClientSaved}
       />
       <ConfirmDialog
         open={Boolean(deleteClientTarget)}
-        title="Delete this client?"
-        description={`${deleteClientTarget?.name || 'This client'} will be removed from Clients. Any standalone CRM lead records for this client will also be deleted; linked listings and transactions will be kept.`}
-        confirmLabel="Delete client"
+        title={isAttorneyClientDirectory ? 'Delete this client?' : 'Delete this contact?'}
+        description={`${deleteClientTarget?.name || `This ${isAttorneyClientDirectory ? 'client' : 'contact'}`} will be removed from ${isAttorneyClientDirectory ? 'Clients' : 'Contacts'}. Any standalone CRM lead records for this ${isAttorneyClientDirectory ? 'client' : 'contact'} will also be deleted; linked listings and transactions will be kept.`}
+        confirmLabel={isAttorneyClientDirectory ? 'Delete client' : 'Delete contact'}
         confirming={deletingClient}
         variant="destructive"
         onConfirm={handleDeleteClient}

@@ -154,6 +154,19 @@ async function allEmailRows(query) {
   }
 }
 
+export async function getEmailSendingSetup(organisationId) {
+  const permission = await supabase.rpc('email_domain_can_manage', { p_organisation_id: organisationId })
+  if (permission.error) throw permission.error
+  if (permission.data !== true) return { canManage: false, domains: [], identities: [] }
+  const [domains, identities] = await Promise.all([
+    supabase.from('email_sending_domains').select('*').eq('organisation_id', organisationId).order('created_at', { ascending: false }),
+    supabase.from('email_sender_identities').select('*').eq('organisation_id', organisationId).order('created_at'),
+  ])
+  if (domains.error) throw domains.error
+  if (identities.error) throw identities.error
+  return { canManage: true, domains: domains.data || [], identities: identities.data || [] }
+}
+
 export async function getEmailCampaignWorkspace(organisationId) {
   if (!organisationId) return { campaigns: [], performance: [], identities: [], domains: [], contacts: [], subscriptionTypes: [], deliverability: [], templates: [], savedAudiences: [], usage: [], billingProfile: null, dailyPerformance: [], categoryPerformance: [] }
   const reportingMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).slice(0, 7)
@@ -440,14 +453,9 @@ export async function verifyEmailSendingDomain({ organisationId, domainId }) {
 }
 
 export async function getEmailSendingPolicy(organisationId) {
-  const { data, error } = await supabase.from('email_sending_policies')
-    .select('approved_at,paused_at,pause_reason,daily_recipient_limit,self_service_blocked,organisation_daily_limit,manual_paused_at')
-    .eq('organisation_id', organisationId).maybeSingle()
+  const { data, error } = await supabase.rpc('email_domain_setup_status', { p_organisation_id: organisationId })
   if (error) throw error
-  if (!data) return null
-  const status = await supabase.rpc('email_campaign_controls_status', { p_organisation_id: organisationId })
-  if (status.error) throw status.error
-  return { ...data, ...status.data }
+  return data
 }
 
 export async function setEmailSendingControls({ organisationId, paused, dailyLimit }) {

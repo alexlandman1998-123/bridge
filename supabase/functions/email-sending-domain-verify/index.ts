@@ -35,7 +35,7 @@ Deno.serve(withApiCredentials(async (req) => {
   });
   const { data: userData, error: userError } = await caller.auth.getUser();
   if (userError || !userData.user) return json(401, { error: "Your session could not be verified." });
-  const { data: allowed, error: permissionError } = await caller.rpc("email_campaign_can_send", { p_organisation_id: organisationId });
+  const { data: allowed, error: permissionError } = await caller.rpc("email_domain_can_manage", { p_organisation_id: organisationId });
   if (permissionError || !allowed) return json(403, { error: "You are not allowed to verify sending domains for this organisation." });
 
   const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -56,27 +56,29 @@ Deno.serve(withApiCredentials(async (req) => {
     catch { return json(502, { error: "Unable to refresh the sending domain. Try again shortly." }); }
   }
   const now = new Date().toISOString();
-  const verifyResponse = await fetch(`https://api.resend.com/domains/${encodeURIComponent(domain.provider_domain_id)}/verify`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${resendKey}`, "content-type": "application/json" }, signal: AbortSignal.timeout(15000),
-  });
-  const verifyPayload = await verifyResponse.json().catch(() => ({}));
-  if (!verifyResponse.ok) {
-    const message = text(verifyPayload?.message || "Resend could not start domain verification.");
-    await db.from("email_sending_domains").update({
-      verification_status: "failed",
-      last_provider_error: message.split(resendKey).join("[redacted]").slice(0, 500),
-      last_checked_at: now,
-    }).eq("id", domain.id);
-    return json(502, { error: "The email provider could not verify this domain. Check the DNS records and try again." });
-  }
-
+  let verificationStarted = false;
   try {
+    const verifyResponse = await fetch(`https://api.resend.com/domains/${encodeURIComponent(domain.provider_domain_id)}/verify`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${resendKey}`, "content-type": "application/json" }, signal: AbortSignal.timeout(15000),
+    });
+    const verifyPayload = await verifyResponse.json().catch(() => ({}));
+    if (!verifyResponse.ok) {
+      const message = text(verifyPayload?.message || "Resend could not start domain verification.");
+      await db.from("email_sending_domains").update({
+        verification_status: "failed",
+        last_provider_error: message.split(resendKey).join("[redacted]").slice(0, 500),
+        last_checked_at: now,
+      }).eq("id", domain.id);
+      return json(502, { error: "The email provider could not verify this domain. Check the DNS records and try again." });
+    }
+
+    verificationStarted = true;
     const requested = await db.from("email_sending_domains").update({ verification_requested_at: now }).eq("id", domain.id);
     if (requested.error) throw requested.error;
     const status = await refreshSendingDomain({ db, domain, resendKey });
     return json(200, { domain: { id: domain.id, domainName: domain.domain_name, status } });
   } catch {
-    return json(502, { error: "Verification started but its status could not be saved. Recheck shortly." });
+    return json(502, { error: verificationStarted ? "Verification started but its status could not be saved. Recheck shortly." : "The email provider could not be reached. Your saved domain and DNS records are kept; try verification again shortly." });
   }
 }));

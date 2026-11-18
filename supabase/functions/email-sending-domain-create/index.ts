@@ -62,7 +62,7 @@ Deno.serve(withApiCredentials(async (req) => {
   });
   const { data: userData, error: userError } = await caller.auth.getUser();
   if (userError || !userData.user) return json(401, { error: "Your session could not be verified." });
-  const { data: allowed, error: permissionError } = await caller.rpc("email_campaign_can_send", { p_organisation_id: organisationId });
+  const { data: allowed, error: permissionError } = await caller.rpc("email_domain_can_manage", { p_organisation_id: organisationId });
   if (permissionError || !allowed) return json(403, { error: "You are not allowed to set up sending domains for this organisation." });
 
   const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });

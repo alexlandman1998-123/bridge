@@ -23,7 +23,9 @@ Deno.serve(withApiCredentials(async (req) => {
         if (error || !data.user) return null
         const userDb = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } })
         const member = await userDb.rpc('bridge_is_active_member', { target_org: org })
-        return !member.error && member.data === true ? {userId:data.user.id,userDb} : null
+        if(member.error||member.data!==true)return null
+        const role=await db.rpc('whatsapp_staff_is_admin',{p_org:org,p_actor:data.user.id})
+        return {userId:data.user.id,userDb,isAdmin:!role.error&&role.data===true}
       },
       meta: campaignMeta,
     })

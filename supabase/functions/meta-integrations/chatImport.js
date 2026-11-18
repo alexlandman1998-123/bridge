@@ -1,7 +1,7 @@
 import { prepareWhatsAppChatImport } from '../_shared/whatsappChatExport.js'
 
 export async function handleChatImport({ db, actor, org, payload, hash }) {
-  if (!actor.isAdmin) throw Error('An organisation administrator must import chat history.')
+  if (!actor.isAdmin && !actor.canConnectOwn) throw Error('An organisation administrator or the number owner must import chat history.')
   const phone = String(payload.contactPhone || '').replace(/[\s()+.-]/g, '')
   if (!/^[1-9][0-9]{6,14}$/.test(phone)) throw Error('Enter the customer’s full international WhatsApp number, including country code.')
   const parsed = prepareWhatsAppChatImport(payload.source, { dateOrder: payload.dateOrder, utcOffset: payload.utcOffset, businessAuthor: payload.businessAuthor })

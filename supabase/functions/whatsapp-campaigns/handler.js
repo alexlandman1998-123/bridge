@@ -53,6 +53,7 @@ export function createCampaignHandler({ db, authorize, meta, functionBaseUrl }) 
     const authorizationResult = await authorize(authorization, org)
     const actor = typeof authorizationResult === 'string' ? {userId:authorizationResult} : authorizationResult
     if (!actor?.userId) throw new Error('Sign in with an active membership of this organisation.')
+    if (actor.isAdmin !== true) throw new Error('WhatsApp bulk campaigns are restricted to principals. Inbox access does not grant campaign access.')
     switch (payload.action) {
       case 'workspace': {
         const [campaigns, contacts, senders] = await Promise.all([

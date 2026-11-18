@@ -8,6 +8,7 @@ export async function handleAutomations({ db, actor, org, action, payload, chann
   await result(db.rpc('whatsapp_staff_is_admin',{p_org:org,p_actor:actor.userId})).then(admin=>{if(!admin)throw new Error('Agency management must manage WhatsApp automations.')})
   async function templates(senderId) {
     const sender=await channel(org,senderId)
+    if(sender.owner_user_id)throw new Error('Company automations require a shared organisation number.')
     if(sender.connection_status!=='connected')throw new Error('Reconnect this WhatsApp sender.')
     const rows=[];let after=''
     for(let page=0;page<5;page++) {

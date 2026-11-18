@@ -3,6 +3,10 @@ import React from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import InboxAccountSetup from './InboxAccountSetup'
+import { MemoryRouter } from 'react-router-dom'
+const state=vi.hoisted(()=>({workspace:null}))
+vi.mock('../../hooks/useMetaWorkspace',()=>({useMetaWorkspace:()=>state.workspace}))
+vi.mock('./WhatsAppInboxOperations',()=>({default:()=>null}))
 import { metaIntegrationRequest, prepareFacebookSdk, launchWhatsAppSignup } from '../../services/metaIntegrationService'
 import { startRevoGoogleWorkspaceInboxAuthorization } from '../../modules/revo/sharedInbox/connectionCore'
 import { createMailbox, loadEmailMailboxSettings } from '../../modules/sharedInbox/mailboxService'
@@ -10,8 +14,8 @@ vi.mock('../../services/metaIntegrationService',()=>({metaIntegrationRequest:vi.
 vi.mock('../../modules/sharedInbox/mailboxService',()=>({configureImapMailbox:vi.fn(),createMailbox:vi.fn(),loadEmailMailboxSettings:vi.fn()}))
 vi.mock('../../modules/sharedInbox/outgoingMailService',()=>({configureSmtpMailbox:vi.fn()}))
 vi.mock('../../modules/revo/sharedInbox/connectionCore',()=>({startRevoGoogleWorkspaceInboxAuthorization:vi.fn(),startRevoMicrosoftInboxAuthorization:vi.fn()}))
-const workspace={organisationId:'org-a',currentUserId:'user-a',canManage:true,canConnectOwn:true,refresh:vi.fn()}
-function mount(props={}) { return render(<InboxAccountSetup open onClose={vi.fn()} workspace={workspace} userId="user-a" onConnected={vi.fn()} {...props}/>) }
+const workspace={organisationId:'org-a',accessScope:'org-a:user-a',currentUserId:'user-a',canManage:true,canConnectOwn:true,refresh:vi.fn(),senders:[],assignees:[],loading:false}
+function mount(props={}) { state.workspace=props.workspace||workspace;return render(<MemoryRouter><InboxAccountSetup open onClose={vi.fn()} workspace={workspace} userId="user-a" onConnected={vi.fn()} {...props}/></MemoryRouter>) }
 function choose(name) {fireEvent.click(screen.getByRole('button',{name:new RegExp(`^${name}`)}))}
 afterEach(cleanup)
 beforeEach(()=>{vi.clearAllMocks();loadEmailMailboxSettings.mockResolvedValue({canCreatePrivate:true,canCreateShared:true,mailboxes:[]})})
@@ -20,15 +24,18 @@ it('opens a channel chooser without starting connections or changing the inbox U
  for(const channel of ['WhatsApp','Email','Meta'])expect(screen.getByRole('button',{name:new RegExp(`^${channel}`)})).toBeTruthy()
  expect(metaIntegrationRequest).not.toHaveBeenCalled();expect(createMailbox).not.toHaveBeenCalled();expect(window.location.href).toBe(original)
 })
-it('prepares a personal WhatsApp connection in the current organisation and confirms actual connection',async()=>{
- const done=vi.fn();metaIntegrationRequest.mockResolvedValue({appId:'app',graphVersion:'v23.0',state:'session'});prepareFacebookSdk.mockResolvedValue({login:vi.fn()});launchWhatsAppSignup.mockResolvedValue({sender:{id:'sender',connection_status:'connected',display_phone_number:'+27123456789'}})
- mount({onConnected:done});choose('WhatsApp');fireEvent.click(screen.getByRole('button',{name:'Continue'}));await screen.findByRole('button',{name:'Continue with Meta'})
- expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{coexistence:true})
- fireEvent.click(screen.getByRole('button',{name:'Continue with Meta'}));await screen.findByText('WhatsApp connected');expect(done).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Back to Inbox'}));expect(done).toHaveBeenCalledOnce()
+it('embeds the same personal-default WhatsApp setup as settings',async()=>{
+ metaIntegrationRequest.mockResolvedValue({appId:'app',graphVersion:'v23.0',state:'session'});prepareFacebookSdk.mockResolvedValue({})
+ mount();choose('WhatsApp');fireEvent.click(await screen.findByRole('button',{name:'Add number'}))
+ expect(screen.getByLabelText('Inbox').value).toBe('self')
+ fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Continue with Meta'})
+ expect(metaIntegrationRequest).toHaveBeenCalledWith('org-a','begin_whatsapp',{ownerUserId:'user-a',coexistence:true})
 })
-it('does not report pending WhatsApp registration as connected',async()=>{
- metaIntegrationRequest.mockResolvedValue({appId:'app',state:'session'});prepareFacebookSdk.mockResolvedValue({});launchWhatsAppSignup.mockResolvedValue({sender:{id:'sender',connection_status:'pending'}})
- mount();choose('WhatsApp');fireEvent.click(screen.getByRole('button',{name:'Continue'}));fireEvent.click(await screen.findByRole('button',{name:'Continue with Meta'}));await screen.findByText('Waiting for Meta confirmation');expect(screen.queryByText('WhatsApp connected')).toBeNull()
+it('requires a sharing acknowledgement in the embedded WhatsApp flow too',async()=>{
+ mount();choose('WhatsApp');fireEvent.click(await screen.findByRole('button',{name:'Add number'}))
+ fireEvent.change(screen.getByLabelText('Inbox'),{target:{value:''}})
+ expect(screen.getByRole('button',{name:'Continue',exact:true}).disabled).toBe(true)
+ expect(metaIntegrationRequest).not.toHaveBeenCalled()
 })
 it('saves a private email draft and waits for provider confirmation before claiming connected',async()=>{
  createMailbox.mockResolvedValue({id:'mail',address:'sales@example.test',providerKey:'google_workspace'});mount();choose('Email');await waitFor(()=>expect(loadEmailMailboxSettings).toHaveBeenCalledWith('org-a'))
@@ -40,38 +47,29 @@ it('saves a private email draft and waits for provider confirmation before claim
 it('keeps Meta messaging separate and does not claim an unavailable backend is connected',async()=>{
  mount();choose('Meta');await screen.findByText(/messaging are not yet available/);expect(screen.getByRole('button',{name:/^Messenger/})).toBeTruthy();expect(screen.getByRole('button',{name:/^Instagram/})).toBeTruthy();expect(screen.queryByRole('button',{name:'Continue with Meta'})).toBeNull()
 })
-it('blocks WhatsApp setup for a member without connection access',()=>{
- mount({workspace:{...workspace,canManage:false,canConnectOwn:false}});choose('WhatsApp');expect(screen.getByRole('alert').textContent).toContain('administrator must connect');expect(metaIntegrationRequest).not.toHaveBeenCalled()
+it('blocks WhatsApp setup for a member without connection access',async()=>{
+ mount({workspace:{...workspace,canManage:false,canConnectOwn:false}});choose('WhatsApp')
+ await screen.findByText('Ask an organisation administrator to connect a number.')
+ expect(screen.queryByRole('button',{name:'Add number'})).toBeNull();expect(metaIntegrationRequest).not.toHaveBeenCalled()
 })
-
-it('removes number registration and blocks non-admin connection attempts',()=>{
- mount({workspace:{...workspace,canManage:false,canConnectOwn:true}});choose('WhatsApp')
- expect(screen.queryByText('Set up a platform-only number')).toBeNull()
- expect(screen.queryByRole('button',{name:'Continue'})).toBeNull()
- expect(metaIntegrationRequest).not.toHaveBeenCalled()
+it('waits for Meta confirmation without claiming a pending number is connected',async()=>{
+ metaIntegrationRequest.mockResolvedValue({appId:'app',graphVersion:'v23.0',state:'session'});prepareFacebookSdk.mockResolvedValue({})
+ launchWhatsAppSignup.mockResolvedValue({sender:{id:'sender',connection_status:'pending',owner_user_id:'user-a'}})
+ mount();choose('WhatsApp');fireEvent.click(await screen.findByRole('button',{name:'Add number'}))
+ fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));fireEvent.click(await screen.findByRole('button',{name:'Continue with Meta'}))
+ await screen.findByText(/Account linked. Activate the number/)
+ expect(screen.queryByText(/^WhatsApp connected/)).toBeNull()
 })
-it('keeps a pending number pending until Meta confirms its health',async()=>{
- metaIntegrationRequest.mockResolvedValue({appId:'app',state:'session'});prepareFacebookSdk.mockResolvedValue({});launchWhatsAppSignup.mockResolvedValue({sender:{id:'sender',connection_status:'pending'}})
- mount();choose('WhatsApp');fireEvent.click(screen.getByRole('button',{name:'Continue'}));fireEvent.click(await screen.findByRole('button',{name:'Continue with Meta'}))
- await screen.findByText('Waiting for Meta confirmation');expect(screen.queryByLabelText('Six-digit registration PIN')).toBeNull()
- metaIntegrationRequest.mockResolvedValue({sender:{id:'sender',connection_status:'connected',display_phone_number:'+27123456789'}})
- fireEvent.click(screen.getByRole('button',{name:'Check connection'}));await screen.findByText('WhatsApp connected')
- expect(metaIntegrationRequest).toHaveBeenLastCalledWith('org-a','health_sender',{senderId:'sender'})
-})
-it('shows readable phone options and sends only the selected authorized number',async()=>{
- metaIntegrationRequest.mockResolvedValue({appId:'app',state:'session'});prepareFacebookSdk.mockResolvedValue({});launchWhatsAppSignup.mockResolvedValue({requiresPhoneSelection:true,wabaId:'business',phones:[{id:'phone-1',displayPhoneNumber:'+27123456789'},{id:'phone-2',displayPhoneNumber:'+27987654321'}]})
- mount();choose('WhatsApp');fireEvent.click(screen.getByRole('button',{name:'Continue'}));fireEvent.click(await screen.findByRole('button',{name:'Continue with Meta'}))
+it('shows readable phone options and sends only the selected authorised number',async()=>{
+ metaIntegrationRequest.mockResolvedValue({appId:'app',graphVersion:'v23.0',state:'session'});prepareFacebookSdk.mockResolvedValue({})
+ launchWhatsAppSignup.mockResolvedValue({requiresPhoneSelection:true,wabaId:'business',phones:[{id:'phone-1',displayPhoneNumber:'+27123456789'},{id:'phone-2',displayPhoneNumber:'+27987654321'}]})
+ mount();choose('WhatsApp');fireEvent.click(await screen.findByRole('button',{name:'Add number'}))
+ fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));fireEvent.click(await screen.findByRole('button',{name:'Continue with Meta'}))
  const select=await screen.findByLabelText('WhatsApp number');expect(screen.getByRole('button',{name:'Connect selected number'}).disabled).toBe(true)
- expect(screen.getByRole('option',{name:'+27987654321'})).toBeTruthy()
  fireEvent.change(select,{target:{value:'phone-2'}})
- metaIntegrationRequest.mockResolvedValue({sender:{id:'sender',connection_status:'connected'}})
- fireEvent.click(screen.getByRole('button',{name:'Connect selected number'}));await screen.findByText('WhatsApp connected')
+ metaIntegrationRequest.mockResolvedValue({sender:{id:'sender',connection_status:'connected',owner_user_id:'user-a'}})
+ fireEvent.click(screen.getByRole('button',{name:'Connect selected number'}));await screen.findByText(/WhatsApp connected. New conversations/)
  expect(metaIntegrationRequest).toHaveBeenLastCalledWith('org-a','finish_whatsapp',{state:'session',wabaId:'business',phoneNumberId:'phone-2'})
-})
-it('recovers from an empty number list without trapping the user in a dropdown',async()=>{
- metaIntegrationRequest.mockResolvedValue({appId:'app',state:'session'});prepareFacebookSdk.mockResolvedValue({});launchWhatsAppSignup.mockResolvedValue({requiresPhoneSelection:true,phones:[]})
- mount();choose('WhatsApp');fireEvent.click(screen.getByRole('button',{name:'Continue'}));fireEvent.click(await screen.findByRole('button',{name:'Continue with Meta'}))
- expect((await screen.findByRole('alert')).textContent).toContain('No eligible');expect(screen.getByRole('button',{name:'Continue'}).disabled).toBe(false)
 })
 it('clears the selected setup and cancels it when the dialog closes',async()=>{
  const view=mount();choose('Email');await screen.findByLabelText('Email address')
@@ -97,4 +95,23 @@ it('keeps failed email authorization retryable and closes its empty popup',async
  mount();choose('Email');await waitFor(()=>expect(loadEmailMailboxSettings).toHaveBeenCalled())
  fireEvent.change(screen.getByLabelText('Email address'),{target:{value:'me@example.test'}});fireEvent.click(screen.getByRole('button',{name:'Continue'}));fireEvent.click(await screen.findByRole('button',{name:'Sign in with Google'}))
  expect((await screen.findByRole('alert')).textContent).toContain('Provider unavailable');expect(child.close).toHaveBeenCalled();expect(screen.getByRole('button',{name:'Sign in with Google'}).disabled).toBe(false);popup.mockRestore()
+})
+
+it('requires acknowledgement before saving a shared email mailbox',async()=>{
+ mount();choose('Email');await waitFor(()=>expect(loadEmailMailboxSettings).toHaveBeenCalled())
+ fireEvent.change(screen.getByLabelText('Email address'),{target:{value:'office@example.test'}})
+ fireEvent.change(screen.getByLabelText('Who can access this inbox?'),{target:{value:'workspace'}})
+ expect(screen.getByRole('button',{name:'Continue',exact:true}).disabled).toBe(true);expect(createMailbox).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('checkbox',{name:/office@example.test and imported/}))
+ createMailbox.mockResolvedValue({id:'mail',address:'office@example.test',providerKey:'google_workspace',accessScope:'workspace'})
+ fireEvent.click(screen.getByRole('button',{name:'Continue',exact:true}));await screen.findByRole('button',{name:'Sign in with Google'})
+ expect(createMailbox).toHaveBeenCalledWith(expect.objectContaining({accessScope:'workspace',confirmWorkspaceSharing:true}))
+})
+it('shows and acknowledges the existing scope before continuing an unfinished company mailbox',async()=>{
+ loadEmailMailboxSettings.mockResolvedValue({canCreatePrivate:true,canCreateShared:true,mailboxes:[{id:'existing',address:'team@example.test',accessScope:'workspace',providerKey:'google_workspace',permissions:{manage:true}}]})
+ mount();choose('Email');fireEvent.change(await screen.findByLabelText('Or finish an existing setup'),{target:{value:'existing'}})
+ expect(screen.getByText(/Access: Everyone in this organisation/)).toBeTruthy()
+ expect(screen.getByRole('button',{name:'Sign in with Google'}).disabled).toBe(true)
+ fireEvent.click(screen.getByRole('checkbox',{name:/this connection shares imported messages/}))
+ expect(screen.getByRole('button',{name:'Sign in with Google'}).disabled).toBe(false)
 })

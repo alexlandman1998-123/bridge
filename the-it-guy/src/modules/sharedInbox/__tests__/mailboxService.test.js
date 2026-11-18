@@ -12,9 +12,12 @@ assert.equal(mailbox.address, 'agent@example.test')
 assert.equal(mailbox.display_name, 'My mailbox')
 assert.equal(mailbox.connection_status, 'draft')
 assert.equal(mailbox.is_default, false)
-for (const accessScope of ['workspace', 'selected']) assert.equal(buildMailboxInput({ ...input, accessScope }).access_scope, accessScope)
+for (const accessScope of ['workspace', 'selected']) assert.equal(buildMailboxInput({ ...input, accessScope, confirmWorkspaceSharing: true }).access_scope, accessScope)
 assert.equal(buildMailboxInput({ ...input, providerKey: 'other_email' }).provider_key, 'other_email')
 for (const patch of [{ accessScope: 'anyone' }, { ownerUserId: '' }, { ownerUserId: '22222222-2222-4222-8222-222222222222' }, { organisationId: 'invalid' }, { address: 'no-address' }, { providerKey: 'pop3' }]) {
   assert.throws(() => buildMailboxInput({ ...input, ...patch }))
 }
 console.log('Mailbox service: safe defaults and connection input checks passed.')
+
+assert.throws(() => buildMailboxInput({ ...input, accessScope: 'workspace' }), /Confirm sharing/)
+assert.throws(() => buildMailboxInput({ ...input, accessScope: 'workspace', confirmWorkspaceSharing: 'true' }), /Confirm sharing/)

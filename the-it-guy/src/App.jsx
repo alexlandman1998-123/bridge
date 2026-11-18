@@ -418,6 +418,7 @@ const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/Setting
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
 const SettingsExternalWebsitesPage = lazy(() => import('./pages/settings/SettingsExternalWebsitesPage'))
+const SettingsDomainsPage = lazy(() => import('./pages/settings/SettingsDomainsPage'))
 const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
@@ -3700,6 +3701,16 @@ function AppRoutes() {
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <SettingsOrganisationPage section="branding" />
                     </RoleRoute>
+                  }
+                />
+                <Route
+                  path="domains"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['developer', 'agent']}>
+                        <SettingsDomainsPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
                   }
                 />
                 <Route

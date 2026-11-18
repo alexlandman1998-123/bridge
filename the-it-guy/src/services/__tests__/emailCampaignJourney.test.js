@@ -27,6 +27,12 @@ it('imports HTML and an owned image, saves/preflights/schedules, dispatches both
   const env = key => ({ SUPABASE_URL: base, SUPABASE_SECRET_KEYS: '{"default":"sb_secret_fixture"}', SUPABASE_PUBLISHABLE_KEYS: '{"default":"sb_publishable_fixture"}',
     RESEND_API_KEY: 'resend-fixture', EMAIL_CAMPAIGN_WORKER_SECRET: 'worker-fixture', ARCH9_CAMPAIGN_SENDING_ENABLED: 'true', ARCH9_CAMPAIGN_RESEND_DOMAIN_ID: 'platform-domain' })[key]
   try {
+    // Exercise the corrected permissions in the complete service-to-provider journey.
+    await db.exec('reset role')
+    const roles = readMigration('202607170027_settings_role_permission_governance_phase3_2.sql')
+    await db.exec(roles.slice(roles.indexOf('create or replace function'), roles.indexOf('$$;') + 3))
+    await db.exec(`create function bridge_membership_role(uuid) returns text language sql as $$ select 'principal'::text $$`)
+    await db.exec(readMigration('20261118082259_email_domain_setup_permissions.sql'))
     await db.exec('reset role; create schema storage; create table storage.objects(bucket_id text,name text,metadata jsonb)')
     const assets = readMigration('20261009113022_email_campaign_image_assets.sql')
     for (const name of ['email_campaign_reserve_asset','email_campaign_list_assets']) await db.exec(definition(assets,name))

@@ -1,8 +1,30 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { createEmailSender, createEmailSendingDomain, sendEmailCampaignTest, verifyEmailSendingDomain } from '../emailCampaignService'
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rpc: vi.fn() }))
-vi.mock('../../lib/supabaseClient', () => ({ supabase: { functions: { invoke: mocks.invoke }, rpc: mocks.rpc } }))
+import { createEmailSender, createEmailSendingDomain, getEmailSendingPolicy, getEmailSendingSetup, sendEmailCampaignTest, verifyEmailSendingDomain } from '../emailCampaignService'
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), rpc: vi.fn(), from: vi.fn() }))
+vi.mock('../../lib/supabaseClient', () => ({ supabase: { functions: { invoke: mocks.invoke }, rpc: mocks.rpc, from: mocks.from } }))
 beforeEach(() => { vi.clearAllMocks() })
+it('does not load configuration for agents or indeterminate permission', async () => {
+  for (const allowed of [false, null]) {
+    mocks.rpc.mockResolvedValue({ data: allowed, error: null })
+    expect(await getEmailSendingSetup('org')).toEqual({ canManage: false, domains: [], identities: [] })
+  }
+  expect(mocks.from).not.toHaveBeenCalled()
+})
+it('loads only domain and sender setup, without campaign dashboards or contact queries', async () => {
+  mocks.rpc.mockResolvedValue({ data: true, error: null })
+  mocks.from.mockImplementation(table => {
+    const query = { select: vi.fn(() => query), eq: vi.fn(() => query), order: vi.fn(async () => ({ data: [{ id: table }], error: null })) }
+    return query
+  })
+  const result = await getEmailSendingSetup('org')
+  expect(result.canManage).toBe(true)
+  expect(mocks.from.mock.calls.map(([name]) => name)).toEqual(['email_sending_domains', 'email_sender_identities'])
+})
+it('reports account activation even before an organisation has a sending policy', async () => {
+  mocks.rpc.mockResolvedValue({ data: { account_ready: false, account_blocker: 'activation' } })
+  expect(await getEmailSendingPolicy('org')).toEqual({ account_ready: false, account_blocker: 'activation' })
+  expect(mocks.rpc).toHaveBeenCalledWith('email_domain_setup_status', { p_organisation_id: 'org' })
+})
 it('keeps actionable provider errors available to the agency', async () => {
   mocks.invoke.mockResolvedValue({ error: { context: Response.json({ error: 'This domain is already claimed by another organisation.' }) } })
   await expect(createEmailSendingDomain({ organisationId: 'org', domain: 'agency.co.za' })).rejects.toThrow('already claimed')

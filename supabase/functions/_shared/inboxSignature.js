@@ -24,15 +24,21 @@ export function normalizeInboxSignature(input = {}) {
   for (const field of ['website', 'logoUrl']) if (signature[field] && !signatureUrl(signature[field], true)) throw new Error('Use a complete https:// address for the website and logo.')
   if (!Array.isArray(input.body ?? [])) throw new Error('Signature text could not be read.')
   signature.body = (input.body || []).map(run => {
+    if (run?.imageUrl) {
+      const imageUrl=signatureUrl(run.imageUrl,true),alt=text(run.alt||'Email signature image')
+      if (!imageUrl || alt.length>200) throw new Error('The signature image link is invalid.')
+      return { imageUrl, alt }
+    }
     if (!run || typeof run.text !== 'string' || run.text.length > 2000) throw new Error('Signature text is too long.')
     if (run.href && !signatureUrl(run.href)) throw new Error('Use an https://, mailto: or tel: link.')
     return { text: run.text, bold: run.bold === true, italic: run.italic === true, ...(run.href ? { href: signatureUrl(run.href) } : {}) }
-  }).filter(run => run.text)
+  }).filter(run => run.imageUrl || run.text)
   if (signature.body.length > 100 || JSON.stringify(signature).length > 16000) throw new Error('Keep the signature under 16,000 characters.')
   return signature
 }
 export function renderSignatureBody(runs = []) {
   return runs.map(run => {
+    if (run.imageUrl) return `<img src="${escape(signatureUrl(run.imageUrl,true))}" alt="${escape(run.alt||'Email signature image')}" style="max-width:320px;max-height:160px;height:auto;display:block;margin:8px 0">`
     let html = escape(run.text).replaceAll('\n', '<br>')
     if (run.bold === true) html = `<strong>${html}</strong>`
     if (run.italic === true) html = `<em>${html}</em>`

@@ -8,7 +8,7 @@ import { handleAutomations } from './automations.js'
 import { handleAudiences, handleCampaignRoutes } from './audiences.js'
 
 const result = async (query) => { const {data,error}=await query; if(error) throw new Error(error.message); return data }
-const safeSender = 'owner_user_id,ownership_version,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,last_checked_at,onboarding_mode,business_app_session,business_app_connected_at'
+const safeSender = 'owner_user_id,ownership_version,whatsapp_access_scope,id,organisation_id,waba_id,phone_number_id,display_phone_number,business_display_name,connection_status,verification_status,last_error_message,last_checked_at,onboarding_mode,business_app_session,business_app_connected_at'
 const safePage = 'id,page_id,page_name,connection_status,granted_scopes,page_tasks,last_error_message'
 const safeMessages = 'id,conversation_id,direction,message_type,body_text,media_json,delivery_status,error_message,event_at,created_at,created_by'
 const safePosts = 'id,listing_id,connection_id,snapshot_json,status,provider_post_id,public_url,error_message,created_at,published_at'
@@ -61,7 +61,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     }
     const connectionActions=['begin_whatsapp','exchange_whatsapp_code','finish_whatsapp','register_sender','health_sender','disconnect_sender','business_app_status','start_business_app_sync','retry_business_app_updates']
     if(connectionActions.includes(action)&&!actor.isAdmin&&!actor.canConnectOwn) throw new Error('An organisation administrator must manage Meta connections.')
-    if(['set_sender_owner','assign_conversation'].includes(action)&&!actor.isAdmin) throw new Error('Agency management must change WhatsApp ownership and assignments.')
+    if(action==='assign_conversation'&&!actor.isAdmin) throw new Error('Agency management must change WhatsApp assignments.')
     if(['crm_context','link_crm','unlink_crm','crm_conversations'].includes(action)) {
       return handleCrmLink({db,actor,org,action,payload,conversation})
     }
@@ -70,14 +70,22 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     }
     if(action==='workspace') {
       let senderQuery=db.from('organisation_communication_channels').select(safeSender).eq('organisation_id',org).eq('provider','meta').eq('channel_type','whatsapp')
-      if(!actor.isAdmin) senderQuery=senderQuery.or(`owner_user_id.eq.${actor.userId},owner_user_id.is.null`)
       const [senders,pages,members]=await Promise.all([
         result(senderQuery.order('created_at')),
         result(db.from('meta_lead_ads_connections').select(safePage).eq('organisation_id',org).order('connected_at')),
         result(db.from('organisation_users').select(actor.isAdmin?'user_id,first_name,last_name,email,role':'user_id,first_name,last_name,role').eq('organisation_id',org).eq('status','active')),
       ])
+      const visibleSenders=[]
+      for(const sender of senders||[]) {
+        const access=await result(db.rpc('whatsapp_sender_access_check',{p_org:org,p_actor:actor.userId,p_sender:sender.id,p_permission:'view'}))
+        if(access) visibleSenders.push({...sender,canManageAccess:Boolean(sender.owner_user_id===actor.userId||(sender.owner_user_id==null&&actor.isAdmin)),accessRole:sender.owner_user_id===actor.userId||actor.isAdmin?'responder':'granted'})
+      }
       const assignees=(members||[]).filter(m=>META_STAFF_ROLES.includes(m.role)).map(m=>({id:m.user_id,canOversee:META_ADMIN_ROLES.includes(m.role),name:[m.first_name,m.last_name].filter(Boolean).join(' ')||m.email||'Team member'}))
-      return {senders:senders||[],pages:(pages||[]).map(p=>({...p,canPost:canPublishPage(p)})),canManage:actor.isAdmin,canConnectOwn:Boolean(actor.canConnectOwn),currentUserId:actor.userId,assignees}
+      return {senders:visibleSenders,pages:(pages||[]).map(p=>({...p,canPost:canPublishPage(p)})),canManage:actor.isAdmin,canConnectOwn:Boolean(actor.canConnectOwn),currentUserId:actor.userId,assignees}
+    }
+    if(action==='sender_access') {
+      if(!isUuid(payload.senderId)||!['get','save'].includes(payload.operation)) throw new Error('Choose a WhatsApp number and a valid access action.')
+      return result(db.rpc('whatsapp_sender_access_request',{p_org:org,p_actor:actor.userId,p_sender:payload.senderId,p_action:payload.operation,p_fields:payload.access||{}}))
     }
     // Calendar's post type is explicitly Facebook and routes to a listing.
     // Business posts keep their own Campaigns history; Instagram is not relabelled.
@@ -102,13 +110,16 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
       return {posts}
     }
     if(action==='set_sender_owner') {
+      if(!Object.hasOwn(payload,'ownerUserId')) throw new Error('Choose the number owner explicitly.');
       if(!isUuid(payload.senderId)||!(payload.ownerUserId==null||payload.ownerUserId===''||isUuid(payload.ownerUserId))) throw new Error('Choose a number and an active agent.')
+      if(!text(payload.ownerUserId)&&payload.confirmWorkspaceSharing!==true) throw new Error('Confirm that this number and its existing conversations will be shared with the organisation.');
       return result(db.rpc('whatsapp_sender_set_owner',{p_org:org,p_actor:actor.userId,p_sender:payload.senderId,p_owner:text(payload.ownerUserId)||null,p_version:Number.isInteger(payload.ownershipVersion)?payload.ownershipVersion:null}))
     }
     if(action==='begin_whatsapp') {
       if(!config.appId||!config.whatsappConfigId) throw new Error('WhatsApp embedded signup is not configured.')
-      const owner=actor.isAdmin?text(payload.ownerUserId)||null:actor.userId
-      if(!actor.isAdmin&&payload.ownerUserId&&payload.ownerUserId!==actor.userId) throw new Error('You can connect only your own WhatsApp number.')
+      const owner=actor.isAdmin&&Object.hasOwn(payload,'ownerUserId')?text(payload.ownerUserId)||null:actor.userId
+      if(owner===null&&payload.confirmWorkspaceSharing!==true) throw new Error('Confirm that this number and imported conversations will be shared with the organisation.');
+      if(text(payload.ownerUserId)&&text(payload.ownerUserId)!==actor.userId) throw new Error('You can connect only your own WhatsApp number.')
       if(owner){if(!isUuid(owner)) throw new Error('Choose an active agent.');await result(db.rpc('whatsapp_staff_is_admin',{p_org:org,p_actor:owner}))}
       const state=crypto.randomUUID()+crypto.randomUUID()
       await result(db.from('meta_whatsapp_authorizations').insert({state_hash:await hash(state),organisation_id:org,requested_by:actor.userId,owner_user_id:owner,coexistence:payload.coexistence===true,expires_at:new Date(now().getTime()+600000).toISOString()}))
@@ -126,7 +137,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     if(action==='finish_whatsapp')return finishWhatsAppAuthorization({db,org,actor,payload,session:await authSession(org,actor,payload.state),graph,decrypt,encrypt,hash,now,senderToken})
     if(['business_app_status','start_business_app_sync','retry_business_app_updates'].includes(action)) {
       const row=await channel(org,payload.senderId)
-      if(!actor.isAdmin&&row.owner_user_id!==actor.userId)throw new Error('You can manage only your own WhatsApp number.')
+      if(row.owner_user_id ? row.owner_user_id!==actor.userId : !actor.isAdmin)throw new Error('You can manage only your own WhatsApp number.')
       if(action==='start_business_app_sync') {
         if(!Number.isInteger(payload.ownershipVersion)||row.ownership_version!==payload.ownershipVersion)throw new Error('Refresh this number before starting sync.')
         return startBusinessAppSync({db,org,actor,sender:row,graph,senderToken})
@@ -135,7 +146,7 @@ export function createMetaIntegrationHandler({db,authorize,graph,encrypt,decrypt
     }
     if(action==='register_sender'||action==='health_sender'||action==='disconnect_sender') {
       const row=await channel(org,payload.senderId)
-      if(!actor.isAdmin&&row.owner_user_id!==actor.userId) throw new Error('You can manage only your own WhatsApp number.')
+      if(row.owner_user_id ? row.owner_user_id!==actor.userId : !actor.isAdmin) throw new Error('You can manage only your own WhatsApp number.')
       if(action==='disconnect_sender') {
         await result(db.from('organisation_communication_channels').update({connection_status:'disconnected',disconnected_at:now().toISOString(),meta_access_token:'',token_ciphertext:null,is_default:false}).eq('id',row.id).eq('organisation_id',org).eq('ownership_version',row.ownership_version).select('id').single())
         return {disconnected:true}

@@ -13,7 +13,7 @@ export default function RevoSharedInboxSettingsPage() {
   const [tab, setTab] = useState('mailboxes')
   const [emailTab, setEmailTab] = useState('mailboxes')
   const activateTab = value => { setTab(value); if (value !== 'whatsapp') setEmailTab(value) }
-  const tabs = [['mailboxes', 'Email accounts', <Mail size={17} aria-hidden="true" />], ['signatures', 'Signatures', <PenLine size={17} aria-hidden="true" />], ['whatsapp', 'WhatsApp', <MessageCircle size={17} aria-hidden="true" />]]
+  const tabs = [['mailboxes', 'Email', <Mail size={17} aria-hidden="true" />], ['whatsapp', 'WhatsApp', <MessageCircle size={17} aria-hidden="true" />], ['signatures', 'Signatures', <PenLine size={17} aria-hidden="true" />]]
   const selectTab = (event, index) => {
     const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null
     if (next === null) return

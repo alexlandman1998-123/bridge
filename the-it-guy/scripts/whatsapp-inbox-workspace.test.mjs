@@ -77,14 +77,15 @@ test('different requests for the same reply are blocked while explicit send limi
   await incoming(db,'inbound still works');assert.equal((await page(db,admin,'thread',chat)).messages.filter(message=>message.direction==='inbound').length,2)
  }finally{await db.close()}
 })
-test('a departing personal-number owner cannot read or send but incoming messages remain stored for management handover',async()=>{
+test('a departing personal-number owner loses access while stored messages remain private from management',async()=>{
  const db=await setup();try{
   await db.query("insert into organisation_communication_channels(id,organisation_id,provider,channel_type,phone_number_id,waba_id,connection_status,owner_user_id) values($1,$2,'meta','whatsapp','300','200','connected',$3)",[id(600),org,agent])
   await db.query("update organisation_users set status='inactive' where user_id=$1",[agent])
   const chat=(await db.query("select whatsapp_inbox_receive('300','200','27820000009','wamid.departing',$1,'Still receiving','text','{}','Fixture') id",[new Date().toISOString()])).rows[0].id
-  assert.ok(chat);const visible=await page(db,admin,'thread',chat);assert.equal(visible.conversation.assigned_user_id,agent)
+  assert.ok(chat);await assert.rejects(page(db,admin,'thread',chat),/not found/)
+  assert.equal((await db.query('select assigned_user_id from whatsapp_inbox_conversations where id=$1',[chat])).rows[0].assigned_user_id,agent)
   await assert.rejects(page(db,agent,'thread',chat),/membership/);await assert.rejects(page(db,peer,'thread',chat),/not found/)
-  assert.equal((await command(db,admin,'report')).unavailableOwner,1)
+  assert.equal((await command(db,admin,'report')).unavailableOwner,0)
  }finally{await db.close()}
 })
 test('mentions and internal note pages are visible only to authorised people and acknowledgement is separate from message reads',async()=>{

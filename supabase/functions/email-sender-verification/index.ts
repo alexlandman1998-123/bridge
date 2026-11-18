@@ -19,7 +19,7 @@ Deno.serve(withApiCredentials(async (req) => {
   const resendKey = Deno.env.get("RESEND_API_KEY") || "";
   if (!url || !anonKey || !serviceKey || !resendKey) return json(500, { error: "Sender verification is not configured." });
   const caller = createClient(url, anonKey, { global: { headers: { authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: allowed } = await caller.rpc("email_campaign_can_send", { p_organisation_id: organisationId });
+  const { data: allowed } = await caller.rpc("email_domain_can_manage", { p_organisation_id: organisationId });
   if (!allowed) return json(403, { error: "You are not allowed to verify senders for this organisation." });
   const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: domainRows, error: domainError } = await db.from("email_sending_domains")

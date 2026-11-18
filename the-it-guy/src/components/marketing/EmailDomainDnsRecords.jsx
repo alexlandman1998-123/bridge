@@ -1,0 +1,20 @@
+import { Copy } from 'lucide-react'
+
+export default function EmailDomainDnsRecords({ domain, onCopy, onVerify, onReconnect, disabled, checking }) {
+  const records = Array.isArray(domain.dns_records) ? domain.dns_records : []
+  const verified = domain.verification_status === 'verified'
+  const instructions = [`DNS setup for ${domain.domain_name}`, 'Keep existing website and inbox records. If a host already has a different value, ask your DNS administrator before replacing it.', 'Use the exact provider host below. Some DNS panels append the domain automatically; do not append it twice.', ...records.map(r => `${r.record || ''}: Type ${r.type}; Host ${r.name}; Value ${r.value}; TTL ${r.ttl || 'Auto'}${r.priority != null ? `; Priority ${r.priority}` : ''}`), 'After saving, return to Arch9 and select Check DNS records. DNS changes may take up to 72 hours. Verification must finish before sending.'].join('\n\n')
+  return <article className="email-settings-card email-domain-dns">
+    <h3>2. Verify DNS records</h3>
+    <p>Add these records in the DNS settings for <strong>{domain.domain_name}</strong>, or copy the instructions for your IT person.</p>
+    <div className="email-dns-guidance"><strong>Keep your existing website and inbox records.</strong><p>If a host already contains a different value, ask your DNS administrator before replacing it. A separate campaign subdomain can avoid conflicts with another email service.</p><p>Some DNS panels add your domain automatically. Enter the host once; do not append the domain twice. Use Auto for TTL unless your provider requires another value. For Cloudflare CNAME records, use DNS only.</p></div>
+    {domain.last_provider_error && <p className="wa-error" role="alert">{domain.last_provider_error}</p>}
+    <div className="email-dns-records">{records.map((record, index) => <section className="email-dns-record" key={`${record.name}-${index}`} aria-label={`${record.record || record.type} record ${index + 1}`}>
+      <div className="email-domain-title"><strong>{record.record || record.type}</strong><span className={`email-domain-status ${record.status === 'verified' ? 'is-verified' : ''}`}>{record.status === 'verified' ? 'Verified' : record.status === 'failed' ? 'Needs attention' : 'Awaiting verification'}</span></div>
+      <dl><div><dt>Type</dt><dd>{record.type}</dd></div><div><dt>Host / name</dt><dd><code>{record.name}</code><button type="button" aria-label={`Copy host ${record.name}`} onClick={() => void onCopy(record.name)}><Copy size={15} /></button></dd></div><div><dt>Value</dt><dd><code>{record.value}</code><button type="button" aria-label={`Copy value for ${record.name}`} onClick={() => void onCopy(record.value)}><Copy size={15} /></button></dd></div><div><dt>TTL</dt><dd>{record.ttl || 'Auto'}</dd></div>{record.priority != null && <div><dt>Priority</dt><dd>{record.priority}</dd></div>}</dl>
+    </section>)}</div>
+    {!records.length && <p>No DNS records were confirmed yet. Reconnect the domain to recover its setup.</p>}
+    <div className="email-sender-actions"><button type="button" className="wa-secondary-button" disabled={!records.length} onClick={() => void onCopy(instructions)}>Copy setup instructions</button><button type="button" className="wa-primary-button" disabled={disabled || !domain.provider_domain_id || domain.verification_status === 'disabled'} onClick={onVerify}>{checking ? 'Checking…' : verified ? 'Recheck DNS records' : 'Check DNS records'}</button>{(!domain.provider_domain_id || domain.verification_status === 'failed' || !records.length) && domain.verification_status !== 'disabled' && <button type="button" className="wa-secondary-button" disabled={disabled} onClick={onReconnect}>Reconnect domain</button>}</div>
+    <p className="email-dns-timing">{verified ? 'DNS verified. You can continue with your sender details.' : 'After saving your DNS changes, select Check DNS records. Updates may take up to 72 hours. We refresh the status every 30 seconds while this page is visible.'}</p>
+  </article>
+}

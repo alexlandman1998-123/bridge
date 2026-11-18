@@ -1,5 +1,6 @@
 import {
   Building2,
+  Globe2,
   Mail,
   Palette,
   PlugZap,
@@ -64,6 +65,15 @@ export const SETTINGS_NAV_GROUPS = [
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'logo colours colors brand portal reports primary icon dark',
         status: { tone: 'success', label: 'Logo and colours configured' },
+      },
+      {
+        to: '/settings/domains',
+        label: 'Domains',
+        description: 'Set up and verify the sending domain used for bulk email campaigns.',
+        icon: Globe2,
+        roles: ['developer', 'agent'],
+        permission: PERMISSIONS.manageWorkspaceSettings,
+        keywords: 'email bulk campaigns sender sending domain DNS SPF DKIM verification',
       },
       {
         to: '/settings/communications/templates',

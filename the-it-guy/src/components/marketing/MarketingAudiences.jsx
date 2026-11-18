@@ -129,7 +129,7 @@ export default function MarketingAudiences(props) {
   return <AudienceLibrary key={props.organisationId} {...props} />
 }
 
-function AudienceLibrary({ organisationId, channel = 'crm', subscriptionId, onApply, onChoose, onSelect, initialCreate = false, initialAudience = null }) {
+function AudienceLibrary({ organisationId, channel = 'crm', subscriptionId, onApply, onChoose, onSelect, initialCreate = false, initialAudience = null, heading = 'Shared CRM audiences' }) {
   const [query, setQuery] = useState('')
   const [offset, setOffset] = useState(0)
   const [attempt, setAttempt] = useState(0)
@@ -151,9 +151,9 @@ function AudienceLibrary({ organisationId, channel = 'crm', subscriptionId, onAp
   const loadError = state.key === requestKey ? state.error : ''
   const start = (name = '', definition = emptyAudienceDefinition()) => { setEditing({ name, description: '', visibility: 'personal', definition }); setSelected(null); setError('') }
   const refresh = () => setAttempt((value) => value + 1)
-  return <section className="ma-library" aria-label="Shared CRM audiences">
+  return <section className="ma-library" aria-label={heading}>
     {selected && !editing && (<button type="button" className="ma-back" onClick={() => { setSelected(null); refresh() }}><ArrowLeft size={15} />All audiences</button>)}
-    <header className="ma-heading"><div><UsersRound size={22} /><h2>Shared CRM audiences</h2></div><div><button type="button" className="ma-button" onClick={refresh}><RefreshCw size={15} />Refresh</button><button type="button" className="ma-button ma-primary" disabled={!library} onClick={() => start()}><Plus size={16} />Create audience</button></div></header>
+    <header className="ma-heading"><div><UsersRound size={22} /><h2>{heading}</h2></div><div><button type="button" className="ma-button" onClick={refresh}><RefreshCw size={15} />Refresh</button><button type="button" className="ma-button ma-primary" disabled={!library} onClick={() => start()}><Plus size={16} />Create audience</button></div></header>
 
     {loadError && <p role="alert" className="ma-error">{loadError}</p>}
     {error && <p role="alert" className="ma-error">{error}</p>}
