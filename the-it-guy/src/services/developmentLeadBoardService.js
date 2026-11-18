@@ -1,6 +1,7 @@
 import { notifyDevelopmentLeadChange } from './developmentLeadRefreshService.js'
 import { supabase } from '../lib/supabaseClient.js'
 import { normalizeDeveloperLeadStatus } from '../core/developerLeads/developerLeadContract.js'
+import { getLeadDevelopmentId } from '../core/leads/developmentBuyerLead.js'
 import { resolveDevelopmentLeadBoardMove } from '../core/developments/developmentLeadBoard.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -40,4 +41,38 @@ export async function saveDevelopmentLeadBoardStage({ lead, targetKey, client = 
   }
   notifyDevelopmentLeadChange({ ...lead, sourceLeadId: lead.sourceLeadId })
   return { developerLeadId: data.developer_lead_id, leadStatus: data.lead_status, updatedAt: data.updated_at }
+}
+
+
+// Complete the same early sales milestone on the development link after the
+// buyer workspace records its evidence. Never infer reservations or later work.
+export async function saveDevelopmentBuyerMilestone({ organisationId, lead, milestone, client = supabase }) {
+  const developmentId = getLeadDevelopmentId(lead)
+  if (!developmentId) return null
+  const sourceLeadId = lead?.leadId || lead?.lead_id || ''
+  if (!client || !UUID.test(organisationId || '') || !UUID.test(sourceLeadId) || !UUID.test(developmentId)
+    || !['contacted', 'qualified'].includes(milestone)) throw new Error('A resolved buyer and development milestone are required.')
+  const linkedId = lead?.developmentLeadContext?.developerLeadId
+  const { data, error } = await client.from('developer_leads')
+    .select('developer_lead_id,developer_org_id,source_agency_org_id,source_lead_id,primary_development_id,lead_owner,lead_status,reservation_state')
+    .eq('source_lead_id', sourceLeadId).eq('primary_development_id', developmentId)
+    .or(`developer_org_id.eq.${organisationId},source_agency_org_id.eq.${organisationId}`).maybeSingle()
+  if (error) throw new Error('Buyer details were saved, but the development board could not be updated. Refresh this lead and retry the action.', { cause: error })
+  if (!data && !linkedId) return null
+  const owner = data?.lead_owner === 'agency' ? data?.source_agency_org_id : data?.developer_org_id
+  if (!data || owner !== organisationId || data.source_lead_id !== sourceLeadId || data.primary_development_id !== developmentId
+    || linkedId && data.developer_lead_id !== linkedId) throw new Error('The buyer’s development link could not be confirmed. Refresh the lead before retrying.')
+  const status = normalizeDeveloperLeadStatus(data.lead_status)
+  const progress = ['new', 'contacted', 'qualified', 'viewing']
+  if (status === 'lost') throw new Error('This development lead is closed. Reopen it before recording a new sales milestone.')
+  if (!progress.includes(status) || progress.indexOf(status) >= progress.indexOf(milestone)
+    || !['none', '', null].includes(data.reservation_state)) return { developerLeadId: data.developer_lead_id, leadStatus: status, unchanged: true }
+  try {
+    return await saveDevelopmentLeadBoardStage({ client, targetKey: milestone, lead: {
+    developerLeadId: data.developer_lead_id, developerOrgId: data.developer_org_id,
+      sourceAgencyOrgId: data.source_agency_org_id, sourceLeadId, leadStatus: status,
+    } })
+  } catch (cause) {
+    throw new Error('Buyer details were saved, but the development board could not be updated. Refresh this lead and retry the action.', { cause })
+  }
 }

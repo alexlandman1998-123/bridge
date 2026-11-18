@@ -213,6 +213,7 @@ import {
 import { buildBuyerJourneyAlignmentModel, hasBuyerOnboardingSentEvidence, hasBuyerOnboardingSubmittedEvidence, hasBuyerSignedOtpEvidence, hasBuyerTransactionCreatedEvidence, summarizeBuyerJourneyDocuments, summarizeBuyerJourneyReadiness } from '../../services/buyerJourneyAlignmentService'
 import { assertDevelopmentBuyerTransactionReady, buildDevelopmentBuyerJourneyModel } from '../../services/developmentBuyerJourneyService.js'
 import { enrichDevelopmentBuyerLeads } from '../../services/developmentBuyerLeadService.js'
+import { saveDevelopmentBuyerMilestone } from '../../services/developmentLeadBoardService.js'
 import { DEVELOPMENT_SELECTION_STAGE, getLeadDevelopmentId, isDevelopmentBuyerLead, getDevelopmentBuyerReservationEvidence } from '../../core/leads/developmentBuyerLead.js'
 import {
   BUYER_INTAKE_NOTE_END,
@@ -22826,6 +22827,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
         { actor: currentAgent },
       ).catch(() => null)
 
+      if (qualificationEvidence.complete && selectedLeadIsDevelopment) {
+        await saveDevelopmentBuyerMilestone({ organisationId, lead: selectedLeadForDevelopmentJourney, milestone: 'qualified' })
+      }
       if (buyerQualificationLeadKeyRef.current !== leadKey) return
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
       const savedForm = buildBuyerQualificationFormFromLead({ ...latestLead, ...leadPatch })
@@ -29609,6 +29613,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline', embeddedLeadId = '' 
       setBuyerJourneyActionStage(BUYER_PROCESS_STAGE_KEYS.qualified)
       setBuyerQualificationEditing(true)
       handleLeadWorkspaceTabSelection('overview')
+      if (selectedLeadIsDevelopment) await saveDevelopmentBuyerMilestone({ organisationId, lead: selectedLeadForDevelopmentJourney, milestone: 'contacted' })
       setMessage('Buyer marked as contacted. Qualification details are ready.')
       setError('')
     } catch (contactError) {
