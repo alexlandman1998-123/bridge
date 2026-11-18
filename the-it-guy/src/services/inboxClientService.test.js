@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { addClientTag, addClientPropertyEnquiry, linkInboxLead, createInboxLead, routeInboxLead, searchClientProperties } from './inboxClientService'
-const api=vi.hoisted(()=>({from:vi.fn(),request:vi.fn(),create:vi.fn(),invalidate:vi.fn(),collaborate:vi.fn(),assign:vi.fn()}))
-vi.mock('../lib/supabaseClient',()=>({supabase:{from:api.from}}))
+const api=vi.hoisted(()=>({from:vi.fn(),request:vi.fn(),create:vi.fn(),invalidate:vi.fn(),collaborate:vi.fn(),assign:vi.fn(),development:vi.fn(),rpc:vi.fn()}))
+vi.mock('../lib/supabaseClient',()=>({supabase:{from:api.from,rpc:api.rpc}}))
 vi.mock('./leadCollaboratorService',()=>({addLeadCollaborator:api.collaborate}))
 vi.mock('./leadAssignmentService',()=>({assignLeadToAgent:api.assign}))
 vi.mock('./metaIntegrationService',()=>({metaIntegrationRequest:api.request}))
+vi.mock('./developmentBuyerLeadCaptureService.js',()=>({createDevelopmentBuyerLead:api.development}))
 vi.mock('../lib/agencyCrmRepository',()=>({createAgencyCrmLeadRecord:api.create}))
 vi.mock('../core/clients/agentClientDirectory',()=>({invalidateAgentClientDirectoryCache:api.invalidate}))
 const org='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',person='11111111-1111-4111-8111-111111111111',target='22222222-2222-4222-8222-222222222222'
 const client={identityId:person,organisationId:org};let insert
-beforeEach(()=>{vi.resetAllMocks();insert=vi.fn().mockResolvedValue({data:null,error:null});api.from.mockReturnValue({insert})})
+beforeEach(()=>{vi.resetAllMocks();api.rpc.mockResolvedValue({data:{leadId:person,agentId:target},error:null});insert=vi.fn().mockResolvedValue({data:null,error:null});api.from.mockReturnValue({insert})})
 afterEach(()=>vi.restoreAllMocks())
 it('normalises tags and stores the permanent client and organisation instead of requiring email',async()=>{await addClientTag(client,'  InVeStOr  ');expect(api.from).toHaveBeenCalledWith('agency_client_tags');expect(insert).toHaveBeenCalledWith({organisation_id:org,client_id:person,tag:'investor'})})
 it('records listing and development enquiry types without overwriting the other',async()=>{await addClientPropertyEnquiry(client,'development',target);expect(insert).toHaveBeenCalledWith({organisation_id:org,client_id:person,development_id:target});await addClientPropertyEnquiry(client,'listing',target);expect(insert).toHaveBeenCalledWith({organisation_id:org,client_id:person,listing_id:target});await expect(addClientPropertyEnquiry(client,'unknown',target)).rejects.toThrow('Choose a listing or development')})
@@ -36,7 +37,7 @@ it('shares the same saved lead with the listing agent, without reassigning it',a
 })
 it('refers the saved lead to the listing agent without sending email',async()=>{
  routingQueries();await routeInboxLead({organisationId:org,recordId:person,listingId:target,expectedAgentId:target,mode:'refer',actor:{id:person}});
- expect(api.assign).toHaveBeenCalledWith(expect.objectContaining({organisationId:org,leadId:person,agentId:target}),{actor:{id:person},notifyAgentEmail:false});expect(api.collaborate).not.toHaveBeenCalled();
+ expect(api.rpc).toHaveBeenCalledWith('bridge_inbox_refer_listing_lead',{p_org:org,p_lead:person,p_listing:target,p_expected_agent:target});expect(api.assign).not.toHaveBeenCalled();expect(api.collaborate).not.toHaveBeenCalled();
 })
 it('blocks a handover if the listing agent changed after selection',async()=>{
  routingQueries(person);await expect(routeInboxLead({organisationId:org,recordId:person,listingId:target,expectedAgentId:target,mode:'refer',actor:{id:person}})).rejects.toThrow('assigned agent changed');expect(api.assign).not.toHaveBeenCalled();expect(api.collaborate).not.toHaveBeenCalled();
@@ -47,4 +48,15 @@ it('restricts development choices to the current organisation even when partner 
  const tables={developments:[{id:person,name:'Samlin development',organisation_id:org,status:'active'},{id:target,name:'Linked development',organisation_id:'partner',status:'active'},{id:unrelated,name:'Other demo',organisation_id:'demo',status:'active'}],development_organisation_relationships:[{development_id:target,organisation_id:org,status:'active',can_view:true},{development_id:unrelated,organisation_id:org,status:'inactive',can_view:true}],development_profiles:[{development_id:person,image_links:['https://images.example.test/cover.jpg'],marketing_content:{mediaLibrary:{galleryImageUrls:[]}}}]};
  api.from.mockImplementation(table=>{let rows=tables[table]||[];const q={select:vi.fn(()=>q),order:vi.fn(()=>q),eq:vi.fn((key,value)=>{queries.push([table,key,value]);rows=rows.filter(row=>row[key]===value);return q}),in:vi.fn((key,ids)=>{rows=rows.filter(row=>ids.includes(row[key]));return q}),then:(resolve)=>Promise.resolve({data:rows,error:null}).then(resolve)};return q});
  const options=await searchClientProperties(org,'development');expect(options.map(row=>row.id)).toEqual([person]);expect(options.some(row=>row.title==='Other demo')).toBe(false);expect(queries).toContainEqual(['developments','organisation_id',org]);expect(queries.some(row=>row[0]==='development_organisation_relationships')).toBe(false);expect(options.find(row=>row.id===person).imageUrl).toBe('https://images.example.test/cover.jpg');
+})
+
+it('creates development inbox leads through the shared buyer capture and retains partial-save identity for retry',async()=>{
+ const capture={};const saved={leadId:person,contactId:target};const progress=vi.fn()
+ api.development.mockImplementationOnce(async input=>{input.onCrmLeadSaved(saved);throw Error('Development link unavailable')}).mockResolvedValueOnce({crmLead:saved})
+ const input={organisationId:org,current:{channel:'email'},actor:{id:person},firstName:'Pat',lastName:'Smith',email:'pat@example.test',category:'buyer',property:{id:target,kind:'development',title:'The Lyle'},capture,onCrmLeadSaved:progress}
+ await expect(createInboxLead(input)).rejects.toThrow('Development link unavailable')
+ const identity={...capture.identity};expect(progress).toHaveBeenCalledWith(saved)
+ expect(await createInboxLead(input)).toEqual({recordId:person,kind:'buyer'})
+ expect(api.development).toHaveBeenLastCalledWith(expect.objectContaining({identity,savedCrmLead:saved,developmentId:target,developerOrgId:org,form:expect.objectContaining({source:'Email'})}))
+ expect(api.create).not.toHaveBeenCalled()
 })

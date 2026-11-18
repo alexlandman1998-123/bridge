@@ -70,10 +70,20 @@ export async function linkInboxLead({organisationId,conversationId,kind,recordId
  const context=await metaIntegrationRequest(organisationId,'crm_context',{conversationId});if(context.linked?.recordId===recordId)return
  await metaIntegrationRequest(organisationId,'link_crm',{conversationId,kind,recordId,linkVersion:context.version,assignmentVersion:context.assignmentVersion});await invalidateClients()
 }
-export async function createInboxLead({organisationId,current,actor,firstName,lastName,email,phone,category,property}){
+export async function createInboxLead({organisationId,current,actor,firstName,lastName,email,phone,category,property,capture={},onCrmLeadSaved}){
  if(!['buyer','seller'].includes(category))throw Error('Choose a buyer or seller lead.');if(!String(firstName||'').trim())throw Error('Enter a first name.')
+ capture.identity ||= {leadId:crypto.randomUUID(),contactId:crypto.randomUUID(),developerLeadId:crypto.randomUUID()}
+ if(category==='buyer'&&property?.kind==='development'){
+  const { createDevelopmentBuyerLead }=await import('./developmentBuyerLeadCaptureService.js')
+  const receipt=await createDevelopmentBuyerLead({organisationId,developerOrgId:organisationId,developmentId:property.id,developmentName:property.title,
+   identity:capture.identity,savedCrmLead:capture.savedCrmLead,actor,
+   form:{firstName,lastName,email,phone,property:property.title,source:current.channel==='email'?'Email':'WhatsApp',notes:`Created from an ${current.channel==='email'?'email':'WhatsApp'} inbox conversation.`},
+   onCrmLeadSaved:lead=>{capture.savedCrmLead=lead;onCrmLeadSaved?.(lead)},
+  })
+  await invalidateClients();return {recordId:receipt.crmLead.leadId,kind:category}
+ }
  const { createAgencyCrmLeadRecord }=await import('../lib/agencyCrmRepository')
- const lead=await createAgencyCrmLeadRecord(organisationId,{contact:{firstName:firstName.trim(),lastName:String(lastName||'').trim(),phone:phone||current.contact_phone||'',email:String(email||'').trim(),contactType:category},assignedAgent:actor,assignedUserId:actor.id,createdBy:actor.id,leadCategory:category,leadDirection:'Inbound',propertyInterest:category==='buyer'?property?.title:'',listingId:category==='buyer'&&property?.kind==='listing'?property.id:null,leadSource:current.channel==='email'?'Email':'WhatsApp',stage:'New Lead',priority:'Medium',notes:`Created from an ${current.channel==='email'?'email':'WhatsApp'} inbox conversation.`},{actor,notifyAgent:false});await invalidateClients();return {recordId:lead.leadId,kind:category}
+ const lead=await createAgencyCrmLeadRecord(organisationId,{leadId:capture.identity.leadId,contact:{contactId:capture.identity.contactId,firstName:firstName.trim(),lastName:String(lastName||'').trim(),phone:phone||current.contact_phone||'',email:String(email||'').trim(),contactType:category},assignedAgent:actor,assignedUserId:actor.id,createdBy:actor.id,leadCategory:category,leadDirection:'Inbound',propertyInterest:category==='buyer'?property?.title:'',listingId:category==='buyer'&&property?.kind==='listing'?property.id:null,leadSource:current.channel==='email'?'Email':'WhatsApp',stage:'New Lead',priority:'Medium',notes:`Created from an ${current.channel==='email'?'email':'WhatsApp'} inbox conversation.`},{actor,notifyAgent:false});await invalidateClients();return {recordId:lead.leadId,kind:category}
 }
 
 // The authenticated client preserves lead and contact RLS for every search result.
@@ -99,10 +109,9 @@ export async function routeInboxLead({organisationId,recordId,listingId,expected
   const {addLeadCollaborator}=await import('./leadCollaboratorService')
   await addLeadCollaborator({organisationId,leadId:recordId,userId:agentId})
  } else {
-  const lead=await result(supabase.from('leads').select('assigned_user_id,assigned_agent_id').eq('organisation_id',id(organisationId)).eq('lead_id',id(recordId)).single())
-  if(lead.assigned_user_id===agentId&&lead.assigned_agent_id===agentId)return
-  const {assignLeadToAgent}=await import('./leadAssignmentService')
-  await assignLeadToAgent({organisationId,leadId:recordId,agentId,reason:'Referred from Inbox to the listing’s assigned agent'},{actor,notifyAgentEmail:false})
+  await result(supabase.rpc('bridge_inbox_refer_listing_lead',{
+   p_org:id(organisationId),p_lead:id(recordId),p_listing:id(listingId),p_expected_agent:id(expectedAgentId),
+  }))
  }
  await invalidateClients()
 }

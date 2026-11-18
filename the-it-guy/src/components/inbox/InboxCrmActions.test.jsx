@@ -50,3 +50,42 @@ it('asks whether to refer or share another agent’s listing and retains a saved
  await screen.findByRole('button',{name:'Retry linking saved lead'});expect(routeInboxLead).toHaveBeenCalledWith(expect.objectContaining({mode:'share',expectedAgentId:'agent-two',listingId:'listing',recordId:'new-lead'}));
  fireEvent.click(screen.getByRole('button',{name:'Retry linking saved lead'}));await waitFor(()=>expect(props.onClose).toHaveBeenCalledOnce());expect(createInboxLead).toHaveBeenCalledOnce();
 })
+
+it('finishes a partial development capture before linking the conversation, preserving its saved identity',async()=>{
+ searchClientProperties.mockResolvedValue([{id:'lyle',kind:'development',title:'The Lyle'}])
+ createInboxLead.mockImplementationOnce(async input=>{input.capture.savedCrmLead={leadId:'saved',contactId:'contact'};input.onCrmLeadSaved({leadId:'saved',contactId:'contact'});throw Error('Buyer lead saved. Development link unavailable')}).mockResolvedValueOnce({kind:'buyer',recordId:'saved'})
+ render(<InboxCrmActions {...props} mode="create" current={{...props.current,channel:'email'}}/> )
+ fireEvent.click(screen.getByRole('tab',{name:'Developments'}))
+ fireEvent.click(screen.getByLabelText('Development',{exact:true}));fireEvent.click(await screen.findByRole('option',{name:/The Lyle/}))
+ fireEvent.click(screen.getByRole('button',{name:'Create and link lead'}))
+ await screen.findByRole('button',{name:'Retry linking saved lead'})
+ expect(linkInboxLead).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button',{name:'Retry linking saved lead'}))
+ await waitFor(()=>expect(props.onClose).toHaveBeenCalledOnce())
+ expect(createInboxLead.mock.calls[1][0].capture).toBe(createInboxLead.mock.calls[0][0].capture)
+ expect(linkInboxLead).toHaveBeenCalledWith(expect.objectContaining({recordId:'saved',channel:'email'}))
+})
+it('email to lead referral links one lead and hands that same lead to the listing agent',async()=>{
+ searchClientProperties.mockResolvedValue([{id:'listing',kind:'listing',title:'Partner listing',assignedAgentId:'agent-two'}])
+ render(<InboxCrmActions {...props} mode="create" current={{...props.current,channel:'email'}}/> )
+ fireEvent.click(screen.getByLabelText('Listing',{exact:true}));fireEvent.click(await screen.findByRole('option',{name:/Partner listing/}))
+ fireEvent.click(screen.getByRole('button',{name:/Refer Move to the listing agent/}));fireEvent.click(screen.getByRole('button',{name:'Create and link lead'}))
+ await waitFor(()=>expect(props.onClose).toHaveBeenCalledOnce())
+ expect(createInboxLead).toHaveBeenCalledOnce()
+ expect(linkInboxLead).toHaveBeenCalledWith(expect.objectContaining({recordId:'new-lead',channel:'email'}))
+ expect(routeInboxLead).toHaveBeenCalledWith(expect.objectContaining({recordId:'new-lead',mode:'refer',listingId:'listing',expectedAgentId:'agent-two'}))
+ expect(linkInboxLead.mock.invocationCallOrder[0]).toBeLessThan(routeInboxLead.mock.invocationCallOrder[0])
+})
+
+it('retries an uncertain referral without rewriting the linked lead after its owner changed',async()=>{
+ searchClientProperties.mockResolvedValue([{id:'listing',kind:'listing',title:'Partner listing',assignedAgentId:'agent-two'}])
+ routeInboxLead.mockRejectedValueOnce(Error('Response lost after transfer')).mockResolvedValueOnce({alreadyReferred:true})
+ render(<InboxCrmActions {...props} mode="create" current={{...props.current,channel:'email'}}/> )
+ fireEvent.click(screen.getByLabelText('Listing',{exact:true}));fireEvent.click(await screen.findByRole('option',{name:/Partner listing/}))
+ fireEvent.click(screen.getByRole('button',{name:/Refer Move to the listing agent/}));fireEvent.click(screen.getByRole('button',{name:'Create and link lead'}))
+ await screen.findByRole('button',{name:'Retry linking saved lead'})
+ saveInboxLeadProperty.mockRejectedValue(Error('Old owner no longer has access'));linkInboxLead.mockRejectedValue(Error('Old owner no longer has access'))
+ fireEvent.click(screen.getByRole('button',{name:'Retry linking saved lead'}))
+ await waitFor(()=>expect(props.onClose).toHaveBeenCalledOnce())
+ expect(createInboxLead).toHaveBeenCalledOnce();expect(linkInboxLead).toHaveBeenCalledOnce();expect(saveInboxLeadProperty).toHaveBeenCalledOnce();expect(routeInboxLead).toHaveBeenCalledTimes(2)
+})

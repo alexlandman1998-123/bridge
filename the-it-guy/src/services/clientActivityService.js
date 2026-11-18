@@ -9,6 +9,41 @@ export const CLIENT_INTERACTION_TYPES = ['call', 'note', 'email', 'message', 'me
 export const CLIENT_PORTAL_ACTIVITY_SECTIONS = new Set(['overview', 'progress', 'documents', 'offers', 'appointments', 'details', 'account', 'bond_application', 'handover', 'snags', 'settings', 'team', 'alterations', 'review', 'listing_marketing', 'document_access_requested'])
 const unavailable = (error) => ['42P01', 'PGRST205', 'PGRST202', '42883'].includes(error?.code)
 
+// Read original envelope metadata through the signed-in user's message RLS.
+// Never infer historical recipients from the conversation's current assignee.
+async function attachEmailParticipants(events, organisationId) {
+  const emailEvents = events.filter(event => event.origin_table === 'revo_inbox_messages')
+  if (!emailEvents.length) return events
+  const unavailableEvents = () => events.map(event => event.origin_table === 'revo_inbox_messages'
+    ? { ...event, emailParticipantsUnavailable: true } : event)
+  if (!organisationId) return unavailableEvents()
+  try {
+    const [messages, mailboxes] = await Promise.all([
+      supabase.from('revo_inbox_messages').select('id, sender_address, recipient_addresses')
+        .eq('organisation_id', organisationId).in('id', [...new Set(emailEvents.map(event => event.origin_id))]),
+      supabase.from('revo_inbox_channels').select('address, display_name')
+        .eq('organisation_id', organisationId).eq('channel', 'email'),
+    ])
+    if (messages.error) return unavailableEvents()
+    const normalize = value => String(value || '').trim().toLowerCase()
+    const labels = new Map((mailboxes.error ? [] : mailboxes.data || []).map(row => [normalize(row.address), row.display_name]))
+    const participant = address => {
+      const value = String(address || '').trim()
+      const label = labels.get(normalize(value))
+      return label && normalize(label) !== normalize(value) ? `${label} (${value})` : value
+    }
+    const envelopes = new Map((messages.data || []).map(row => [row.id, row]))
+    return events.map(event => {
+      if (event.origin_table !== 'revo_inbox_messages') return event
+      const message = envelopes.get(event.origin_id)
+      return message ? { ...event, emailParticipants: {
+        from: participant(message.sender_address),
+        to: [...new Set(message.recipient_addresses || [])].map(participant),
+      } } : { ...event, emailParticipantsUnavailable: true }
+    })
+  } catch { return unavailableEvents() }
+}
+
 export async function loadClientActivity(client, { category = 'all', cursor = null, pageSize = 50 } = {}) {
   if (!client?.identityId || !isSupabaseConfigured || !supabase) return { available: false, events: [], nextCursor: null }
   if (!CLIENT_ACTIVITY_CATEGORIES.some(([key]) => key === category)) throw new Error('Choose a valid activity filter.')
@@ -18,7 +53,7 @@ export async function loadClientActivity(client, { category = 'all', cursor = nu
     p_before_at: cursor?.occurred_at || null, p_before_id: cursor?.id || null, p_limit: size + 1,
   })
   if (error) { if (unavailable(error)) return { available: false, events: [], nextCursor: null }; throw error }
-  const events = (data || []).slice(0, size)
+  const events = await attachEmailParticipants((data || []).slice(0, size), client.organisationId)
   const last = events.at(-1)
   return { available: true, events, nextCursor: data?.length > size ? { occurred_at: last.occurred_at, id: last.id } : null }
 }

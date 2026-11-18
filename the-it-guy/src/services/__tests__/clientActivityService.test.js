@@ -1,6 +1,6 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { clientActivityRecordPath, loadClientActivity, loadClientEngagementSummary, loadLatestClientActivity, logClientInteraction, recordClientPortalVisit } from '../clientActivityService'
-const transport = vi.hoisted(() => ({ rpc: vi.fn() }))
+const transport = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }))
 const scoped = vi.hoisted(() => ({ rpc: vi.fn() }))
 const scopedFactory = vi.hoisted(() => vi.fn(() => scoped))
 vi.mock('../../lib/supabaseClient', () => ({ isSupabaseConfigured: true, supabase: transport, createScopedSupabaseClient: scopedFactory }))
@@ -83,4 +83,38 @@ test('structured call outcomes use the checked engagement command', async () => 
   expect(transport.rpc).not.toHaveBeenCalled()
   expect(clientActivityRecordPath({ origin_table: 'revo_inbox_messages' })).toBe('/inbox')
   expect(clientActivityRecordPath({ origin_table: 'whatsapp_inbox_messages' })).toBe('/inbox/whatsapp')
+})
+
+function emailReads(messages, mailboxes = [], error = null) {
+  transport.from.mockImplementation(table => {
+    const result = { data: table === 'revo_inbox_messages' ? messages : mailboxes, error: table === 'revo_inbox_messages' ? error : null }
+    const query = { select: vi.fn(), eq: vi.fn(), in: vi.fn(), then: (resolve, reject) => Promise.resolve(result).then(resolve, reject) }
+    query.select.mockReturnValue(query); query.eq.mockReturnValue(query); query.in.mockReturnValue(query)
+    return query
+  })
+}
+const receivedEmail = { id: 'journal-email', origin_table: 'revo_inbox_messages', origin_id: 'message-a', communication_direction: 'inbound', title: 'Email received', occurred_at: '2026-11-18T08:32:00Z' }
+test('email history reads the original envelope through scoped message access, not the current assignee', async () => {
+  transport.rpc.mockResolvedValue({ data: [receivedEmail], error: null })
+  emailReads([{ id: 'message-a', sender_address: 'client@example.test', recipient_addresses: ['matt@example.test', 'sales@example.test'] }], [{ address: 'matt@example.test', display_name: 'Matt' }])
+  const result = await loadClientActivity(client)
+  expect(result.events[0].emailParticipants).toEqual({ from: 'client@example.test', to: ['Matt (matt@example.test)', 'sales@example.test'] })
+  const messageQuery = transport.from.mock.results[0].value
+  expect(messageQuery.select).toHaveBeenCalledWith('id, sender_address, recipient_addresses')
+  expect(messageQuery.eq).toHaveBeenCalledWith('organisation_id', 'agency-a')
+  expect(messageQuery.in).toHaveBeenCalledWith('id', ['message-a'])
+})
+test('restricted or failed message reads never invent a recipient or hide other activity', async () => {
+  const note = { id: 'note', title: 'Note logged' }
+  transport.rpc.mockResolvedValue({ data: [receivedEmail, note], error: null })
+  emailReads([], [], { code: '42501' })
+  const result = await loadClientActivity(client)
+  expect(result.events[0]).toMatchObject({ emailParticipantsUnavailable: true })
+  expect(result.events[0].emailParticipants).toBeUndefined()
+  expect(result.events[1]).toEqual(note)
+})
+test('old messages retain actual addresses when mailbox labels are missing', async () => {
+  transport.rpc.mockResolvedValue({ data: [receivedEmail], error: null })
+  emailReads([{ id: 'message-a', sender_address: 'client@example.test', recipient_addresses: ['former-agent@example.test'] }])
+  expect((await loadClientActivity(client)).events[0].emailParticipants.to).toEqual(['former-agent@example.test'])
 })

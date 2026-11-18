@@ -191,3 +191,14 @@ test('a late team summary cannot expose the previous client after switching prof
   await act(async () => resolveOld({ available: true, conversations: [{ id: 'private-old', channel: 'email', assignedName: 'Previous client agent', lastActivityAt: '2026-01-01' }] }))
   expect(screen.queryByText(/Previous client agent/)).toBeNull()
 })
+
+test('incoming history names actual recipients and shows South African time across midnight', async () => {
+  loadClientActivity.mockResolvedValue({ available: true, events: [{ ...event, title: 'Email received', origin_table: 'revo_inbox_messages', communication_direction: 'inbound', actor_name: null, actor_kind: 'client', occurred_at: '2026-11-18T22:32:00Z', emailParticipants: { from: 'client@example.test', to: ['Matt (matt@example.test)'] } }] })
+  show()
+  await screen.findByRole('button', { name: 'Client emailed Matt (matt@example.test)' })
+  expect(screen.getByText(/From: client@example.test/)).toBeTruthy()
+  expect(screen.getByText('00:32')).toBeTruthy()
+  expect(screen.getByText(/Thursday, 19 November 2026/)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText('Search activity'), { target: { value: 'matt@example.test' } })
+  expect(screen.getByRole('button', { name: 'Client emailed Matt (matt@example.test)' })).toBeTruthy()
+})

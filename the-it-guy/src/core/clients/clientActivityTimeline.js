@@ -28,9 +28,9 @@ export function filterActivity(events, { view = 'all', search = '', from = '', t
   const query = search.trim().toLowerCase()
   return events.filter(event => {
     const date = new Date(event.occurred_at)
-    const day = Number.isFinite(date.getTime()) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''
+    const day = Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date) : ''
     return matchesActivityView(event, view)
-      && (!query || [event.title, event.detail, event.actor_name, event.event_type].filter(Boolean).join(' ').toLowerCase().includes(query))
+      && (!query || [clientActivityTitle(event), event.detail, event.actor_name, event.event_type, event.emailParticipants?.from, ...(event.emailParticipants?.to || [])].filter(Boolean).join(' ').toLowerCase().includes(query))
       && (!from || day >= from) && (!to || day <= to)
   })
 }
@@ -47,4 +47,17 @@ export function groupActivity(events) {
   }
   return [...groups.values()].map(group => ({ ...group, events: group.events.sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at)) }))
     .sort((a, b) => Date.parse(b.events[0].occurred_at) - Date.parse(a.events[0].occurred_at))
+}
+
+export function clientActivityTitle(event) {
+  const envelope = event.emailParticipants
+  if (!envelope) return event.title
+  if (event.communication_direction === 'inbound' && envelope.to?.length) {
+    return `Client emailed ${envelope.to.join(', ')}`
+  }
+  if (event.communication_direction === 'outbound') {
+    const sender = event.actor_name || envelope.from || 'Staff'
+    return event.engagement_status === 'failed' ? `${sender} — email send failed` : `${sender} emailed client`
+  }
+  return event.title
 }

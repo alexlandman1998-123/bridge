@@ -1,13 +1,13 @@
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, ArrowRight, ChevronDown, ChevronRight, Search, RefreshCw, Phone, MessageSquare, StickyNote, Users, Megaphone, FileText, CalendarDays, CheckSquare, BriefcaseBusiness, CircleDot, Link2 } from 'lucide-react'
-import { ACTIVITY_VIEWS, activityDirection, filterActivity, groupActivity, matchesActivityView } from '../../core/clients/clientActivityTimeline'
+import { ACTIVITY_VIEWS, clientActivityTitle, activityDirection, filterActivity, groupActivity, matchesActivityView } from '../../core/clients/clientActivityTimeline'
 import './clientActivityTimeline.css'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
 import { CLIENT_ACTIVITY_CATEGORIES, CLIENT_INTERACTION_TYPES, clientActivityRecordPath, loadClientActivity, loadClientEngagementSummary, logClientInteraction } from '../../services/clientActivityService'
 
-const formatTime = (value) => new Date(value).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short' })
+const formatTime = (value) => new Date(value).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Johannesburg' })
 const actorLabels = { staff: 'Staff action', client: 'Client action', system: 'System', historical: 'Earlier record' }
 const localTime = () => {
   const now = new Date()
@@ -151,7 +151,7 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
         <label className="activity-category"><span className="sr-only">Activity filter</span><Field as="select" value={category} disabled={saving} onChange={event => setCategory(event.target.value)}>{CLIENT_ACTIVITY_CATEGORIES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Field></label>
         <div className="activity-date-range"><label><span>From</span><input aria-label="Activity from date" type="date" max={to || undefined} value={from} onChange={event => setFrom(event.target.value)} /></label><label><span>To</span><input aria-label="Activity to date" type="date" min={from || undefined} value={to} onChange={event => setTo(event.target.value)} /></label></div>
       </div>
-      <div className="activity-toolbar-footer"><p>{view === 'work' ? 'Workflow history: tasks, appointments, documents, offers and transaction updates. Past events do not confirm that work is still open.' : 'Search, view counts and dates apply to loaded history. Load older activity to look further back.'}</p>{view !== 'all' || search || from || to || category !== 'all' ? <button type="button" onClick={() => { setView('all'); setSearch(''); setFrom(''); setTo(''); setCategory('all') }}>Clear filters</button> : null}</div>
+      <div className="activity-toolbar-footer"><p>{view === 'work' ? 'Workflow history: tasks, appointments, documents, offers and transaction updates. Past events do not confirm that work is still open.' : 'Times are shown in South African time (SAST). Search, view counts and dates apply to loaded history. Load older activity to look further back.'}</p>{view !== 'all' || search || from || to || category !== 'all' ? <button type="button" onClick={() => { setView('all'); setSearch(''); setFrom(''); setTo(''); setCategory('all') }}>Clear filters</button> : null}</div>
     </div> : null}
     {!available ? <p className="rounded-xl bg-[#fff9ed] p-3 text-sm text-[#7f5b16]">Client activity is awaiting database setup and a permanent client profile.</p> : null}
     {notice ? <p role="status" className="rounded-xl bg-[#edfdf3] p-3 text-sm text-[#1c7d45]">{notice}</p> : null}
@@ -170,26 +170,27 @@ export default function ClientActivityPanel({ client, onChanged, refreshToken = 
     <ol className="activity-timeline">{groups.map((group, index) => {
       const event = group.events[0]
       const previous = groups[index - 1]?.events[0]
-      const day = new Date(event.occurred_at).toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      const day = new Date(event.occurred_at).toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Johannesburg' })
       const showDay = !previous || new Date(previous.occurred_at).toDateString() !== new Date(event.occurred_at).toDateString()
       const isOpen = expanded.has(group.id)
       const direction = activityDirection(event)
       const Icon = group.campaign ? Megaphone : ({ document: FileText, appointment: CalendarDays, task: CheckSquare, transaction: BriefcaseBusiness, offer: FileText, enquiry: ArrowDownLeft, portal: Users }[event.category] || MessageSquare)
-      const title = group.campaign && group.events.length > 1 ? event.detail || 'Campaign activity' : event.title
+      const title = group.campaign && group.events.length > 1 ? event.detail || 'Campaign activity' : clientActivityTitle(event)
       const path = previewData ? null : clientActivityRecordPath(event)
       return <li key={group.id}>
         {showDay ? <div className="activity-day-label">{day}</div> : null}
         <article className={`activity-timeline-entry activity-tone-${group.campaign ? 'campaign' : event.category || 'interaction'}`}>
           <div className="activity-marker"><Icon size={18} /></div>
           <div className="activity-entry-content">
-            <div className="activity-entry-meta"><span className={`activity-direction activity-direction-${direction}`}>{direction === 'incoming' ? <ArrowDownLeft size={12} /> : direction === 'outgoing' ? <ArrowUpRight size={12} /> : <CircleDot size={12} />}{direction === 'internal' ? 'Workspace' : direction === 'incoming' ? 'Incoming' : 'Outgoing'}</span><span>{group.campaign ? 'Campaign' : CLIENT_ACTIVITY_CATEGORIES.find(([key]) => key === event.category)?.[1] || 'Interaction'}</span><time dateTime={event.occurred_at} title={formatTime(event.occurred_at)}>{new Date(event.occurred_at).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}</time></div>
+            <div className="activity-entry-meta"><span className={`activity-direction activity-direction-${direction}`}>{direction === 'incoming' ? <ArrowDownLeft size={12} /> : direction === 'outgoing' ? <ArrowUpRight size={12} /> : <CircleDot size={12} />}{direction === 'internal' ? 'Workspace' : direction === 'incoming' ? 'Incoming' : 'Outgoing'}</span><span>{group.campaign ? 'Campaign' : CLIENT_ACTIVITY_CATEGORIES.find(([key]) => key === event.category)?.[1] || 'Interaction'}</span><time dateTime={event.occurred_at} title={formatTime(event.occurred_at)}>{new Date(event.occurred_at).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg' })}</time></div>
             <button type="button" className="activity-entry-toggle" aria-expanded={isOpen} aria-controls={`activity-details-${group.id}`} onClick={() => toggleEntry(group.id)}><h5>{title}</h5>{isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
+            {event.emailParticipants ? <p className="activity-entry-preview">From: {event.emailParticipants.from || 'Not recorded'} · To: {event.emailParticipants.to?.join(', ') || 'Not recorded'}</p> : event.emailParticipantsUnavailable ? <p className="activity-entry-preview">Email participants unavailable. Refresh or open the inbox to check the original message.</p> : null}
             {event.detail && !(group.campaign && group.events.length > 1) ? <p className="activity-entry-preview">{event.detail}</p> : null}
             {group.campaign ? <div className="activity-campaign-milestones" aria-label="Recorded campaign milestones">{[...group.events].reverse().map(item => <span key={item.id}>{item.title.replace(/^Campaign /, '')}</span>)}</div> : null}
             <div className="activity-entry-footer"><span className="activity-avatar" aria-hidden="true">{event.actor_name ? event.actor_name.split(' ').map(word => word[0]).slice(0, 2).join('') : event.actor_kind === 'client' ? 'C' : 'S'}</span><span>{event.actor_name ? `Recorded by ${event.actor_name}` : actorLabels[event.actor_kind] || 'Recorded action'}</span>{event.historical ? <span>Historical record</span> : null}{event.engagement_status === 'no_answer' ? <span>No answer</span> : null}{Date.parse(event.occurred_at) > Date.now() ? <span>Future dated record</span> : null}{path ? <Link to={path} className="activity-record-link">{event.conversation_id ? 'Open Inbox' : 'Open linked record'}<ArrowRight size={13} /></Link> : null}</div>
             {isOpen ? <div id={`activity-details-${group.id}`} className="activity-expanded-details">
               <span className="client-activity-eyebrow">RECORDED DETAILS</span>
-              {group.events.map(item => <div key={item.id}><strong>{item.title}</strong><time dateTime={item.occurred_at}>{formatTime(item.occurred_at)}</time>{item.detail ? <p>{item.detail}</p> : null}<small>{actorLabels[item.actor_kind] || 'Recorded action'}{item.actor_name ? ` · ${item.actor_name}` : ''}</small></div>)}
+              {group.events.map(item => <div key={item.id}><strong>{clientActivityTitle(item)}</strong><time dateTime={item.occurred_at}>{formatTime(item.occurred_at)}</time>{item.detail ? <p>{item.detail}</p> : null}<small>{actorLabels[item.actor_kind] || 'Recorded action'}{item.actor_name ? ` · ${item.actor_name}` : ''}</small></div>)}
               {group.campaign ? <p className="activity-tracking-note">Opens and clicks are tracking signals and may include automated activity. Only a recorded response confirms a reply.</p> : null}
               {!path ? <small><Link2 size={12} />{previewData ? 'Local preview · linked records are disabled' : 'No linked record action is available for this entry.'}</small> : null}
             </div> : null}
