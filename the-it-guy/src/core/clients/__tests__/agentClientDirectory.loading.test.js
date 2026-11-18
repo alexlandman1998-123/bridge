@@ -180,3 +180,31 @@ test('principal seller links stay complete beyond a thousand deals', async () =>
   expect(sellerQueries).toHaveLength(6)
   expect(sellerQueries.every(query => query.ids.length <= 200 && query.filters.some(([column,value]) => column === 'organisation_id' && value === organisationId))).toBe(true)
 })
+
+
+test.each(['Done', 'Complete', 'Completed', 'Cancelled', 'Canceled', 'Closed'])('closed follow-ups do not leave a client overdue (%s)', async status => {
+  const lead = { leadId: 'lead-a', contactId: 'contact-a', organisationId, stage: 'New Lead' }
+  const contact = { contactId: 'contact-a', firstName: 'Test', lastName: 'Buyer', email: 'buyer@example.test' }
+  api.crm.mockResolvedValue({ ...crm, leads: [lead], contacts: [contact], tasks: [{ leadId: lead.leadId, dueDate: '2020-01-01', status }] })
+  api.identities.mockResolvedValue({ available: true, profiles: [], links: [], identifiers: [] })
+  const directory = await loadAgentClientDirectory(context)
+  expect(directory.clients).toHaveLength(1)
+  expect(directory.clients[0].statusLabel).not.toBe('Follow-up Due')
+})
+
+test.each([
+  ['Pending', '2020-01-01', true],
+  ['In Progress', '2020-01-01', true],
+  ['Pending', null, false],
+  ['Pending', 'invalid', false],
+  ['Pending', '2099-01-01', false],
+])('only open dated overdue tasks flag a client (%s, %s)', async (status, dueDate, overdue) => {
+  api.crm.mockResolvedValue({ ...crm,
+    leads: [{ leadId: 'lead-a', contactId: 'contact-a', organisationId, stage: 'New Lead' }],
+    contacts: [{ contactId: 'contact-a', firstName: 'Test', lastName: 'Buyer', email: 'buyer@example.test' }],
+    tasks: [{ leadId: 'lead-a', dueDate, status }],
+  })
+  api.identities.mockResolvedValue({ available: true, profiles: [], links: [], identifiers: [] })
+  const directory = await loadAgentClientDirectory(context)
+  expect(directory.clients[0].statusLabel === 'Follow-up Due').toBe(overdue)
+})

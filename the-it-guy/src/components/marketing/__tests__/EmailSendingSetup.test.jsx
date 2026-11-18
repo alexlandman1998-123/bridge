@@ -42,7 +42,10 @@ it('guides add → DNS → sender → accepted test, preserves saved setup after
   fireEvent.click(screen.getByRole('button', { name: 'Copy host resend._domainkey' }))
   await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('resend._domainkey'))
   fireEvent.click(screen.getByRole('button', { name: 'Copy setup instructions' }))
-  expect(navigator.clipboard.writeText.mock.calls.at(-1)[0]).toContain('Priority 10')
+  const copiedInstructions = navigator.clipboard.writeText.mock.calls.at(-1)[0]
+  expect(copiedInstructions).toContain('Priority 10')
+  expect(copiedInstructions).toContain('\n\n')
+  expect(copiedInstructions).not.toContain('\\n')
   fireEvent.click(screen.getByRole('button', { name: 'Check DNS records' }))
   await screen.findByLabelText('Sender email'); await idle()
   fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Agency' } })

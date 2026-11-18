@@ -23,7 +23,7 @@ export async function loadClientEnquiryHistory(client) {
   const links = await readPages(() => supabase.from('agency_client_links').select('source_id')
     .eq('organisation_id', organisationId).eq('client_id', client.identityId).eq('source_kind', 'lead').order('id'))
   const ids = [...new Set(links.map(link => link.source_id))]
-  const leads = await readBatches(ids, batch => supabase.from('leads').select('lead_id,organisation_id,lead_source,created_at,listing_id')
+  const leads = await readBatches(ids, batch => supabase.from('leads').select('lead_id,organisation_id,lead_source,created_at,listing_id,property_interest,seller_property_address')
     .eq('organisation_id', organisationId).in('lead_id', batch).order('lead_id'))
   // The lead read is also subject to RLS. Only read logs for visible leads.
   const logs = await readBatches(leads.map(lead => lead.lead_id), batch => supabase.from('lead_ingestion_logs')

@@ -418,8 +418,11 @@ function buildLeadSources({ leads = [], contacts = [], leadActivities = [], task
   const dueTaskLeadIds = new Set(
     (tasks || [])
       .filter((task) => {
-        const due = new Date(task?.dueDate || task?.due_date || 0)
-        return Number.isFinite(due.getTime()) && due.getTime() <= Date.now() && !normalizeLower(task?.status).includes('done')
+        const dueDate = task?.dueDate || task?.due_date
+        if (!dueDate) return false
+        const due = new Date(dueDate)
+        const closed = ['done', 'complete', 'completed', 'cancelled', 'canceled', 'closed'].includes(normalizeLower(task?.status))
+        return Number.isFinite(due.getTime()) && due.getTime() <= Date.now() && !closed
       })
       .map((task) => normalizeText(task?.leadId || task?.lead_id))
       .filter(Boolean),

@@ -7,14 +7,15 @@ const mocks = vi.hoisted(() => ({ createDomain: vi.fn(), createSender: vi.fn(), 
 vi.mock('../../../services/emailCampaignService', () => ({ createEmailSendingDomain: mocks.createDomain, createEmailSender: mocks.createSender, verifyEmailSendingDomain: mocks.verify, refreshEmailSenderVerification: mocks.refresh, getEmailSendingPolicy: mocks.policy, setEmailSendingControls: mocks.controls, sendEmailCampaignTest: mocks.test }))
 const domain = { id: 'domain', domain_name: 'updates.agency.co.za', verification_status: 'pending', provider_domain_id: 'provider', dns_records: [{ name: 'mail.updates', type: 'TXT', value: 'public-dns-value' }] }
 const props = { organisationId: 'org', userId: 'user', domains: [domain], identities: [], onRefresh: vi.fn() }
-beforeEach(() => { mocks.refresh.mockResolvedValue({ domainsVerified: 0, domainsChecked: 1 }); mocks.policy.mockResolvedValue(null) })
-const settled = () => waitFor(() => expect(screen.getByRole('button', { name: 'Recheck verification' }).disabled).toBe(false))
+beforeEach(() => { mocks.refresh.mockResolvedValue({ domainsVerified: 0, domainsChecked: 1 }); mocks.policy.mockResolvedValue({ account_ready: true }) })
+const settled = () => waitFor(() => expect(screen.getByRole('button', { name: 'Refresh sending domain status' }).disabled).toBe(false))
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 describe('Email settings', () => {
   it('rejects URLs and adds a normalized domain through the existing service', async () => {
     mocks.createDomain.mockResolvedValue({ created: true })
     render(<EmailCampaignSettings {...props} />)
     await settled()
+    fireEvent.click(screen.getByRole('button', { name: 'Add another domain' }))
     fireEvent.change(screen.getByLabelText('Domain name'), { target: { value: 'https://agency.co.za/path' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add domain' }))
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('Enter a domain name'))
@@ -27,10 +28,13 @@ describe('Email settings', () => {
   })
   it('checks DNS verification and prevents senders from using a different domain', async () => {
     mocks.verify.mockResolvedValue({ domain: { status: 'verified' } })
-    render(<EmailCampaignSettings {...props} />)
+    const view = render(<EmailCampaignSettings {...props} />)
     await settled()
-    fireEvent.click(screen.getByRole('button', { name: 'Check domain verification' }))
-    await screen.findByText('updates.agency.co.za is verified.')
+    expect(screen.queryByLabelText('Sender email')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Check DNS records' }))
+    await screen.findByText('DNS verified. Continue with your sender details.')
+    view.rerender(<EmailCampaignSettings {...props} domains={[{ ...domain, verification_status: 'verified' }]} />)
+    await settled()
     expect(mocks.verify).toHaveBeenCalledWith({ organisationId: 'org', domainId: 'domain' })
     fireEvent.change(screen.getByLabelText('Display name'), { target: { value: 'Agency' } })
     fireEvent.change(screen.getByLabelText('Sending domain'), { target: { value: 'domain' } })
@@ -47,21 +51,21 @@ describe('Email settings', () => {
     mocks.verify.mockRejectedValue(new Error('Admin access required'))
     const { rerender } = render(<EmailCampaignSettings {...props} />)
     await settled()
-    fireEvent.click(screen.getByRole('button', { name: 'Check domain verification' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check DNS records' }))
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Admin access required')
     rerender(<EmailCampaignSettings {...props} error="Unable to load" />)
-    expect(screen.getByRole('button', { name: 'Add domain' }).disabled).toBe(true)
-    expect(screen.getByRole('button', { name: 'Recheck verification' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Add another domain' }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: 'Refresh sending domain status' }).disabled).toBe(true)
   })
 })
 
 
 it('shows automatic readiness and sends the selected identity test without a recipient override', async () => {
-  mocks.policy.mockResolvedValue({ approved_at: 'now', daily_recipient_limit: 500 })
+  mocks.policy.mockResolvedValue({ account_ready: true, approved_at: 'now', daily_recipient_limit: 500 })
   mocks.test.mockResolvedValue({ deliveredTo: 'admin@agency.co.za' })
-  const identity = { id: 'sender', verification_status: 'verified', is_default: true, display_name: 'Agency', from_email: 'news@updates.agency.co.za', reply_to_email: 'office@agency.co.za', email_sending_domain_id: 'domain' }
+  const identity = { id: 'sender', sender_mode: 'custom', verification_status: 'verified', is_default: true, display_name: 'Agency', from_email: 'news@updates.agency.co.za', reply_to_email: 'office@agency.co.za', email_sending_domain_id: 'domain' }
   render(<EmailCampaignSettings {...props} domains={[{ ...domain, verification_status: 'verified' }]} identities={[identity]} />)
-  await screen.findByText('Your organisation is ready to send')
+  await screen.findByText('This sending method is ready for a test')
   fireEvent.click(screen.getByRole('button', { name: 'Send me a test' }))
   await screen.findByText(/Test accepted for sending to admin@agency.co.za/)
   expect(mocks.test).toHaveBeenCalledWith({ organisationId: 'org', senderIdentityId: 'sender', setupTest: true })
@@ -72,9 +76,9 @@ it('shows automatic readiness and sends the selected identity test without a rec
   await waitFor(() => expect(mocks.createSender).toHaveBeenCalledWith(expect.objectContaining({ identityId: 'sender', makeDefault: true, replyToEmail: 'replies@agency.co.za' })))
 })
 it('keeps test sending disabled for a safety pause', async () => {
-  mocks.policy.mockResolvedValue({ approved_at: 'now', paused_at: 'now', pause_reason: 'Sending paused after a spam complaint.' })
-  render(<EmailCampaignSettings {...props} domains={[{ ...domain, verification_status: 'verified' }]} identities={[{ id: 'sender', verification_status: 'verified' }]} />)
-  await screen.findByText('Sending is paused')
+  mocks.policy.mockResolvedValue({ account_ready: true, approved_at: 'now', paused_at: 'now', pause_reason: 'Sending paused after a spam complaint.' })
+  render(<EmailCampaignSettings {...props} domains={[{ ...domain, verification_status: 'verified' }]} identities={[{ id: 'sender', sender_mode: 'custom', email_sending_domain_id: 'domain', verification_status: 'verified' }]} />)
+  await screen.findByText('Campaign sending is paused')
   expect(screen.getByRole('button', { name: 'Send me a test' }).disabled).toBe(true)
 })
 it('polls verification and stops checking when settings is closed', async () => {
@@ -100,7 +104,7 @@ it('opens mailbox and signature settings with the current workspace identity', a
   expect(screen.queryByLabelText('Domain name')).toBeNull()
   fireEvent.click(screen.getByRole('tab', { name: 'Sending domains & senders' }))
   await settled()
-  expect(screen.getByLabelText('Domain name')).toBeTruthy()
+  expect(screen.getByLabelText('Sending domain')).toBeTruthy()
 })
 
 it('saves the Arch9 sender without requiring a customer domain', async () => {
@@ -108,8 +112,9 @@ it('saves the Arch9 sender without requiring a customer domain', async () => {
   mocks.createSender.mockResolvedValue({ id: 'shared' })
   render(<EmailCampaignSettings {...props} domains={[]} />)
   await settled()
-  fireEvent.change(screen.getByLabelText('Arch9 sender name'), { target: { value: 'Samlin' } })
-  fireEvent.change(screen.getByLabelText('Arch9 reply-to inbox'), { target: { value: 'office@samlin.co.za' } })
+  fireEvent.click(screen.getByRole('button', { name: /Send using Arch9/ }))
+  fireEvent.change(screen.getByLabelText('Sender name'), { target: { value: 'Samlin' } })
+  fireEvent.change(screen.getByLabelText('Reply-to inbox'), { target: { value: 'office@samlin.co.za' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save Arch9 sender' }))
   await waitFor(() => expect(mocks.createSender).toHaveBeenCalledWith({ organisationId: 'org', senderMode: 'arch9', displayName: 'Samlin', replyToEmail: 'office@samlin.co.za', makeDefault: true, identityId: null }))
   expect(mocks.createDomain).not.toHaveBeenCalled()
@@ -117,22 +122,22 @@ it('saves the Arch9 sender without requiring a customer domain', async () => {
 
 it('shows a shared sender as ready without a customer domain and routes its test to the current user', async () => {
   mocks.refresh.mockResolvedValue({ platformSender: { ready: true } })
-  mocks.policy.mockResolvedValue({ approved_at: 'now', daily_recipient_limit: 500 })
+  mocks.policy.mockResolvedValue({ account_ready: true, approved_at: 'now', daily_recipient_limit: 500 })
   mocks.test.mockResolvedValue({ deliveredTo: 'current@samlin.co.za' })
   const identity = { id: 'shared', sender_mode: 'arch9', verification_status: 'verified', display_name: 'Samlin', from_email: 'noreply@updates.arch9.co.za', reply_to_email: 'office@samlin.co.za' }
   render(<EmailCampaignSettings {...props} domains={[]} identities={[identity]} />)
-  await screen.findByText('Your organisation is ready to send')
+  await screen.findByText('This sending method is ready for a test')
   fireEvent.click(screen.getByRole('button', { name: 'Send me a test' }))
   await waitFor(() => expect(mocks.test).toHaveBeenCalledWith({ organisationId: 'org', senderIdentityId: 'shared', setupTest: true }))
 })
 
 it('keeps a shared sender test disabled while platform activation is pending', async () => {
   mocks.refresh.mockResolvedValue({ platformSender: { ready: false } })
-  mocks.policy.mockResolvedValue({ approved_at: 'now' })
+  mocks.policy.mockResolvedValue({ account_ready: true, approved_at: 'now' })
   render(<EmailCampaignSettings {...props} domains={[]} identities={[{ id: 'shared', sender_mode: 'arch9', verification_status: 'verified', display_name: 'Samlin' }]} />)
   await settled()
   expect(screen.getByRole('button', { name: 'Send me a test' }).disabled).toBe(true)
-  expect(screen.getByText(/Arch9 campaign sending is awaiting activation/)).toBeTruthy()
+  expect(screen.getByText('The Arch9 sender is awaiting activation')).toBeTruthy()
 })
 
 it('prefills and edits the existing shared sender without changing its address', async () => {
@@ -140,9 +145,9 @@ it('prefills and edits the existing shared sender without changing its address',
   const identity = { id: 'shared', sender_mode: 'arch9', verification_status: 'verified', display_name: 'Samlin', reply_to_email: 'office@samlin.co.za', is_default: false }
   render(<EmailCampaignSettings {...props} identities={[identity]} />)
   await settled()
-  expect(screen.getByLabelText('Arch9 sender name').value).toBe('Samlin')
+  expect(screen.getByLabelText('Sender name').value).toBe('Samlin')
   expect(screen.queryByLabelText('Arch9 sender address')).toBeNull()
-  fireEvent.change(screen.getByLabelText('Arch9 reply-to inbox'), { target: { value: 'replies@samlin.co.za' } })
+  fireEvent.change(screen.getByLabelText('Reply-to inbox'), { target: { value: 'replies@samlin.co.za' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save Arch9 sender' }))
   await waitFor(() => expect(mocks.createSender).toHaveBeenCalledWith(expect.objectContaining({ identityId: 'shared', senderMode: 'arch9', replyToEmail: 'replies@samlin.co.za', makeDefault: false })))
 })
@@ -151,16 +156,17 @@ it('keeps shared sender edits available after a failed save and displays the err
   mocks.createSender.mockRejectedValue(new Error('Sender changes are not allowed for this organisation.'))
   render(<EmailCampaignSettings {...props} />)
   await settled()
-  fireEvent.change(screen.getByLabelText('Arch9 sender name'), { target: { value: 'Samlin' } })
-  fireEvent.change(screen.getByLabelText('Arch9 reply-to inbox'), { target: { value: 'office@samlin.co.za' } })
+  fireEvent.click(screen.getByRole('button', { name: /Send using Arch9/ }))
+  fireEvent.change(screen.getByLabelText('Sender name'), { target: { value: 'Samlin' } })
+  fireEvent.change(screen.getByLabelText('Reply-to inbox'), { target: { value: 'office@samlin.co.za' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save Arch9 sender' }))
   await screen.findByText('Sender changes are not allowed for this organisation.')
-  expect(screen.getByLabelText('Arch9 sender name').value).toBe('Samlin')
+  expect(screen.getByLabelText('Sender name').value).toBe('Samlin')
   expect(screen.getByRole('button', { name: 'Save Arch9 sender' }).disabled).toBe(false)
 })
 
 it('changes only the current organisation controls and keeps safety stops visible', async () => {
-  mocks.policy.mockResolvedValue({ approved_at: 'now', daily_recipient_limit: 500, organisation_daily_limit: 100, paused_at: 'safety', pause_reason: 'Safety review required' })
+  mocks.policy.mockResolvedValue({ account_ready: true, approved_at: 'now', daily_recipient_limit: 500, organisation_daily_limit: 100, paused_at: 'safety', pause_reason: 'Safety review required' })
   render(<EmailCampaignSettings {...props} />)
   await settled()
   fireEvent.change(screen.getByLabelText('Daily recipient limit'), { target: { value: '25' } })

@@ -57,3 +57,15 @@ test('database read failures do not silently become zero enquiries', async () =>
   supabase.from.mockReturnValue(query)
   await expect(loadClientEnquiryHistory({ identityId: 'client', organisationId: 'agency' })).rejects.toThrow('Denied')
 })
+
+
+test('manual development enquiries retain their saved property interest without a listing', () => {
+  const developmentLead = { ...lead, listing_id: null, property_interest: 'The Lyle' }
+  expect(history([], [developmentLead]).enquiries[0].property).toBe('The Lyle')
+  expect(history([log('manual')], [developmentLead]).enquiries[0].property).toBe('The Lyle')
+})
+
+test('a log for another listing does not inherit the lead’s development interest', () => {
+  const result = history([log('other-property', { listing_id: 'another-listing' })], [{ ...lead, property_interest: 'The Lyle' }])
+  expect(result.enquiries[0].property).toBe('Listing another-')
+})

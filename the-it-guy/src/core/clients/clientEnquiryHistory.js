@@ -9,7 +9,7 @@ export function buildClientEnquiryHistory({ organisationId, leads = [], logs = [
   const enquiries = []
   const append = ({ id, leadId, listingId, source, recordedAt, reference }) => {
     const listing = listingById.get(listingId)
-    enquiries.push({ id, leadId, listingId, source: clean(source) || 'Source not recorded', recordedAt, reference: clean(reference), property: clean(listing?.title || listing?.property_address) || (listingId ? `Listing ${listingId.slice(0, 8)}` : 'No property recorded') })
+    enquiries.push({ id, leadId, listingId, source: clean(source) || 'Source not recorded', recordedAt, reference: clean(reference), property: clean(listing?.title || listing?.property_address) || (!listingId ? clean(leadById.get(leadId)?.property_interest || leadById.get(leadId)?.seller_property_address) : '') || (listingId ? `Listing ${listingId.slice(0, 8)}` : 'No property recorded') })
   }
   for (const log of logs) {
     if (log.organisation_id !== organisationId || !leadById.has(log.lead_id)) continue
